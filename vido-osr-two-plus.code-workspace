@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../vido"
+		},
+		{
+			"path": "../FunSVP"
+		}
+	],
+	"settings": {}
+}
