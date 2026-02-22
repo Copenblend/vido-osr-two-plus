@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Vido.Core" Version="0.1.0" />
+    <PackageReference Include="Vido.Core" Version="0.2.0" />
     <PackageReference Include="System.IO.Ports" Version="8.*" />
     <PackageReference Include="SkiaSharp" Version="2.*" />
     <PackageReference Include="SkiaSharp.Views.WPF" Version="2.*" />
