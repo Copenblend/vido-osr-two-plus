@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Osr2PlusPlugin</RootNamespace>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Vido.Core">
+      <HintPath>..\..\..\vido\src\Vido.Core\bin\Release\net8.0\Vido.Core.dll</HintPath>
+    </Reference>
+    <PackageReference Include="System.IO.Ports" Version="8.*" />
+    <PackageReference Include="SkiaSharp" Version="2.*" />
+    <PackageReference Include="SkiaSharp.Views.WPF" Version="2.*" />
+  </ItemGroup>
+</Project>

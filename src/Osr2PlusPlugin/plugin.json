@@ -1,0 +1,107 @@
+{
+  "id": "com.vido.osr2-plus",
+  "name": "osr2-plus",
+  "displayName": "OSR2+",
+  "version": "1.0.0",
+  "description": "OSR2+ stroker device control — syncs funscript files with video playback via TCode over Serial and UDP connections.",
+  "author": "Vido",
+  "license": "MIT",
+  "entryPoint": "Osr2PlusPlugin.dll",
+  "pluginClass": "Osr2PlusPlugin.Osr2PlusPlugin",
+  "minVidoVersion": "0.1.0",
+  "tags": ["osr2", "tcode", "funscript", "stroker", "haptics"],
+  "contributes": {
+    "sidebar": {
+      "id": "osr2-sidebar",
+      "title": "OSR2+",
+      "icon": "Assets/Icons/sidebar-icon.png",
+      "order": 200
+    },
+    "rightPanel": [
+      {
+        "id": "osr2-axis-control",
+        "title": "Axis Control",
+        "order": 100
+      }
+    ],
+    "bottomPanel": [
+      {
+        "id": "osr2-visualizer",
+        "title": "Funscript Visualizer",
+        "order": 200
+      }
+    ],
+    "statusBar": [
+      {
+        "id": "osr2-status",
+        "name": "OSR2+ Status",
+        "position": "right",
+        "order": 500
+      }
+    ],
+    "toolbarButtons": [
+      {
+        "id": "osr2-quick-connect",
+        "tooltip": "OSR2+ Quick Connect",
+        "icon": "Assets/Icons/connect-icon.png",
+        "order": 100
+      }
+    ],
+    "fileIcons": {
+      ".funscript": "Assets/Icons/funscript-stroke.png"
+    },
+    "settings": [
+      {
+        "id": "defaultConnectionMode",
+        "type": "enum",
+        "default": "UDP",
+        "title": "Default Connection Mode",
+        "description": "Select the default connection mode for the OSR2+ device.",
+        "enumValues": ["UDP", "Serial"],
+        "section": "Connection"
+      },
+      {
+        "id": "defaultUdpPort",
+        "type": "number",
+        "default": 7777,
+        "title": "Default UDP Port",
+        "description": "UDP port number for device communication (default: 7777).",
+        "section": "Connection"
+      },
+      {
+        "id": "defaultBaudRate",
+        "type": "enum",
+        "default": "115200",
+        "title": "Default Baud Rate",
+        "description": "Serial baud rate for device communication.",
+        "enumValues": ["9600", "19200", "38400", "57600", "115200", "250000"],
+        "section": "Connection"
+      },
+      {
+        "id": "tcodeOutputRate",
+        "type": "number",
+        "default": 100,
+        "title": "TCode Output Rate (Hz)",
+        "description": "How many TCode commands per second to send (30–200 Hz).",
+        "section": "Output"
+      },
+      {
+        "id": "globalFunscriptOffset",
+        "type": "number",
+        "default": 0,
+        "title": "Global Funscript Offset (ms)",
+        "description": "Time offset applied to all funscript axes (-500 to +500 ms). Negative = earlier, Positive = later.",
+        "section": "Output"
+      },
+      {
+        "id": "visualizerWindowDuration",
+        "type": "enum",
+        "default": "60",
+        "title": "Visualizer Window Duration",
+        "description": "Duration of the funscript visualization window in seconds.",
+        "enumValues": ["30", "60", "120", "300"],
+        "section": "Visualizer"
+      }
+    ]
+  }
+}
