@@ -11,12 +11,14 @@
   "minVidoVersion": "0.1.0",
   "tags": ["osr2", "tcode", "funscript", "stroker", "haptics"],
   "contributes": {
-    "sidebar": {
-      "id": "osr2-sidebar",
-      "title": "OSR2+",
-      "icon": "Assets/Icons/sidebar-icon.png",
-      "order": 200
-    },
+    "sidebar": [
+      {
+        "id": "osr2-sidebar",
+        "title": "OSR2+",
+        "icon": "Assets/Icons/sidebar-icon.png",
+        "order": 200
+      }
+    ],
     "rightPanel": [
       {
         "id": "osr2-axis-control",
