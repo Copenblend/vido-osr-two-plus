@@ -54,15 +54,31 @@ public partial class VisualizerView : UserControl
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(VisualizerViewModel.HasScripts))
+        if (e.PropertyName is nameof(VisualizerViewModel.HasScripts)
+                            or nameof(VisualizerViewModel.SelectedMode)
+                            or nameof(VisualizerViewModel.LoadedAxes))
+        {
             UpdateEmptyState();
+        }
     }
 
     private void UpdateEmptyState()
     {
-        EmptyStateText.Visibility = _viewModel?.HasScripts == true
-            ? Visibility.Collapsed
-            : Visibility.Visible;
+        if (_viewModel == null || !_viewModel.HasScripts)
+        {
+            EmptyStateText.Text = "No funscript loaded";
+            EmptyStateText.Visibility = Visibility.Visible;
+        }
+        else if (_viewModel.SelectedMode == VisualizationMode.Heatmap &&
+                 !_viewModel.LoadedAxes.ContainsKey("L0"))
+        {
+            EmptyStateText.Text = "No stroke (L0) funscript loaded";
+            EmptyStateText.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            EmptyStateText.Visibility = Visibility.Collapsed;
+        }
     }
 
     // ── Render loop (60 fps via CompositionTarget) ───────────

@@ -218,4 +218,124 @@ public class VisualizerViewRenderingTests
             prev = curr;
         }
     }
+
+    // ═══════════════════════════════════════════════════════
+    //  SpeedToColor — Quarter / Three-Quarter Interpolation
+    // ═══════════════════════════════════════════════════════
+
+    [Fact]
+    public void SpeedToColor_Speed25_QuarterBetweenFirstTwoStops()
+    {
+        var color = VisualizerView.SpeedToColor(25f);
+
+        var c0 = SKColor.Parse("#1B0A7A");
+        var c1 = SKColor.Parse("#2989D8");
+
+        // t = 0.25: color should be 75% c0 + 25% c1
+        int expectedR = (int)(c0.Red + (c1.Red - c0.Red) * 0.25);
+        int expectedG = (int)(c0.Green + (c1.Green - c0.Green) * 0.25);
+        int expectedB = (int)(c0.Blue + (c1.Blue - c0.Blue) * 0.25);
+
+        Assert.InRange((int)color.Red, expectedR - 1, expectedR + 1);
+        Assert.InRange((int)color.Green, expectedG - 1, expectedG + 1);
+        Assert.InRange((int)color.Blue, expectedB - 1, expectedB + 1);
+    }
+
+    [Fact]
+    public void SpeedToColor_Speed75_ThreeQuarterBetweenFirstTwoStops()
+    {
+        var color = VisualizerView.SpeedToColor(75f);
+
+        var c0 = SKColor.Parse("#1B0A7A");
+        var c1 = SKColor.Parse("#2989D8");
+
+        // t = 0.75
+        int expectedR = (int)(c0.Red + (c1.Red - c0.Red) * 0.75);
+        int expectedG = (int)(c0.Green + (c1.Green - c0.Green) * 0.75);
+        int expectedB = (int)(c0.Blue + (c1.Blue - c0.Blue) * 0.75);
+
+        Assert.InRange((int)color.Red, expectedR - 1, expectedR + 1);
+        Assert.InRange((int)color.Green, expectedG - 1, expectedG + 1);
+        Assert.InRange((int)color.Blue, expectedB - 1, expectedB + 1);
+    }
+
+    [Fact]
+    public void SpeedToColor_Speed350_MidBetweenYellowAndOrange()
+    {
+        var color = VisualizerView.SpeedToColor(350f);
+
+        var c0 = SKColor.Parse("#F0C000");
+        var c1 = SKColor.Parse("#FF4500");
+
+        // t = 0.5
+        int expectedR = (int)(c0.Red + (c1.Red - c0.Red) * 0.5);
+        int expectedG = (int)(c0.Green + (c1.Green - c0.Green) * 0.5);
+        int expectedB = (int)(c0.Blue + (c1.Blue - c0.Blue) * 0.5);
+
+        Assert.InRange((int)color.Red, expectedR - 1, expectedR + 1);
+        Assert.InRange((int)color.Green, expectedG - 1, expectedG + 1);
+        Assert.InRange((int)color.Blue, expectedB - 1, expectedB + 1);
+    }
+
+    [Fact]
+    public void SpeedToColor_Speed450_MidBetweenOrangeAndRed()
+    {
+        var color = VisualizerView.SpeedToColor(450f);
+
+        var c0 = SKColor.Parse("#FF4500");
+        var c1 = SKColor.Parse("#FF0000");
+
+        int expectedR = (int)(c0.Red + (c1.Red - c0.Red) * 0.5);
+        int expectedG = (int)(c0.Green + (c1.Green - c0.Green) * 0.5);
+        int expectedB = (int)(c0.Blue + (c1.Blue - c0.Blue) * 0.5);
+
+        Assert.InRange((int)color.Red, expectedR - 1, expectedR + 1);
+        Assert.InRange((int)color.Green, expectedG - 1, expectedG + 1);
+        Assert.InRange((int)color.Blue, expectedB - 1, expectedB + 1);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  SpeedToColor — All Gradient Stops
+    // ═══════════════════════════════════════════════════════
+
+    [Theory]
+    [InlineData(0f,   "#1B0A7A")]
+    [InlineData(100f, "#2989D8")]
+    [InlineData(200f, "#46B946")]
+    [InlineData(300f, "#F0C000")]
+    [InlineData(400f, "#FF4500")]
+    [InlineData(500f, "#FF0000")]
+    public void SpeedToColor_ExactStopValue_ReturnsExactColor(float speed, string expectedHex)
+    {
+        var color = VisualizerView.SpeedToColor(speed);
+        Assert.Equal(SKColor.Parse(expectedHex), color);
+    }
+
+    [Theory]
+    [InlineData(600f)]
+    [InlineData(999f)]
+    [InlineData(10000f)]
+    public void SpeedToColor_AboveMaxStop_ClampedToRed(float speed)
+    {
+        var color = VisualizerView.SpeedToColor(speed);
+        Assert.Equal(SKColor.Parse("#FF0000"), color);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  Heatmap Color Stop Constants
+    // ═══════════════════════════════════════════════════════
+
+    [Fact]
+    public void HeatmapStops_HasSixEntries()
+    {
+        // Verify the gradient has exactly the 6 stops from the spec
+        // We test this indirectly via the boundary values above,
+        // but also verify all 6 produce distinct colors
+        var colors = new HashSet<SKColor>();
+        float[] stops = [0, 100, 200, 300, 400, 500];
+        foreach (var speed in stops)
+            colors.Add(VisualizerView.SpeedToColor(speed));
+
+        Assert.Equal(6, colors.Count);
+    }
 }
