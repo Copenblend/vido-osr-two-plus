@@ -41,8 +41,8 @@ public class TCodeService : IDisposable
 
     // ===== Fill Mode State =====
 
-    /// <summary>Maximum pitch position for Grind mode (safety cap to prevent device damage).</summary>
-    internal const double GrindMaxPitch = 70.0;
+    /// <summary>Maximum position (0–100) for any pitch (R2) fill mode. Safety cap to prevent device damage.</summary>
+    internal const double PitchFillMaxPosition = 70.0;
 
     // Random pattern generators — one per axis
     private readonly Dictionary<string, RandomPatternGenerator> _randomGenerators = new();
@@ -442,14 +442,10 @@ public class TCodeService : IDisposable
         var rawTimeMs = GetExtrapolatedTimeMs();
         var currentTimeMs = rawTimeMs - _offsetMs;
 
-        // Interval for TCode I parameter: actual elapsed time in ms,
-        // scaled inversely by output rate ratio so higher rates produce
-        // snappier servo response and lower rates produce smoother motion.
-        // At 100 Hz (baseline): scale = 1.0 → I ≈ 10ms
-        // At 200 Hz: scale = 0.5 → I ≈ 2–3ms (device snaps to positions faster)
-        // At  50 Hz: scale = 2.0 → I ≈ 40ms  (device takes longer to reach targets)
-        var rateScale = 100.0 / _outputRateHz;
-        var intervalMs = (int)Math.Max(1, Math.Floor(elapsedSec * 1000.0 * rateScale + 0.75));
+        // Interval for TCode I parameter: actual elapsed time since last tick.
+        // This tells the device how long to take reaching the target position.
+        var intervalMs = (int)Math.Floor(elapsedSec * 1000.0 + 0.75);
+        intervalMs = Math.Max(1, intervalMs);
 
         var parts = new List<string>();
 
@@ -524,13 +520,13 @@ public class TCodeService : IDisposable
                 double position;
                 if (effectiveFillMode == AxisFillMode.Grind)
                 {
-                    // Grind in test mode: simulate stroke with triangle wave, cap output to 0-GrindMaxPitch
+                    // Grind in test mode: simulate stroke with triangle wave, cap output to 0-PitchFillMaxPosition
                     var simulatedStroke = PatternGenerator.Calculate(AxisFillMode.Triangle, testState.Phase);
-                    var grindPos = (1.0 - simulatedStroke) * GrindMaxPitch;
+                    var grindPos = (1.0 - simulatedStroke) * PitchFillMaxPosition;
 
                     // Blend with Grind midpoint for ramp-up
                     var grindBlend = Math.Clamp(testState.CurrentAmplitude / 50.0, 0.0, 1.0);
-                    var grindMidpoint = GrindMaxPitch / 2.0;
+                    var grindMidpoint = PitchFillMaxPosition / 2.0;
                     grindPos = grindMidpoint + (grindPos - grindMidpoint) * grindBlend;
 
                     var grindTcode = (int)(grindPos / 100.0 * 999);
@@ -580,6 +576,9 @@ public class TCodeService : IDisposable
                 var blend = Math.Clamp(testState.CurrentAmplitude / 50.0, 0.0, 1.0);
                 var testPosition = 50.0 + (position - 50.0) * blend;
 
+                // Safety cap: limit all pitch fills to 0-PitchFillMaxPosition
+                testPosition = ClampPitchFillPosition(config, testPosition);
+
                 // Scale through axis min/max and apply offset
                 var testTcode = ApplyPositionOffset(config, PositionToTCode(config, testPosition));
                 if (IsDirty(config.Id, testTcode))
@@ -594,16 +593,6 @@ public class TCodeService : IDisposable
             if (_isPlaying && _scripts.TryGetValue(config.Id, out var script))
             {
                 var position = _interpolation.GetPosition(script, currentTimeMs, config.Id);
-
-                // Scale position by output rate ratio so the slider doubles as a
-                // speed control: higher rates amplify motion away from center (50)
-                // making the device travel more distance per tick = faster.
-                // 100 Hz (default) = 1.0× (unchanged), 200 Hz = 2.0× (amplified),
-                // 30 Hz = 0.3× (dampened toward center).
-                var speedMultiplier = _outputRateHz / 100.0;
-                position = 50.0 + (position - 50.0) * speedMultiplier;
-                position = Math.Clamp(position, 0, 100);
-
                 var tcodeValue = ApplyPositionOffset(config, PositionToTCode(config, position));
 
                 if (IsDirty(config.Id, tcodeValue))
@@ -630,15 +619,20 @@ public class TCodeService : IDisposable
                 if (config.FillMode == AxisFillMode.Grind)
                 {
                     // Grind: pitch inversely follows stroke (stroke up → pitch down)
-                    // Capped to 0-GrindMaxPitch for device safety
-                    grindPos = GrindMaxPitch - (strokePosition / 100.0) * GrindMaxPitch;
+                    // Capped to 0-PitchFillMaxPosition for device safety
+                    grindPos = PitchFillMaxPosition - (strokePosition / 100.0) * PitchFillMaxPosition;
                 }
                 else // Figure8
                 {
                     // Lissajous figure-8: pitch/roll varies with stroke position and smoothed direction
                     var normalizedStroke = strokePosition / 100.0;
                     var figure8Value = PatternGenerator.CalculateFigure8(normalizedStroke, _smoothStrokeDirection);
-                    grindPos = config.Min + figure8Value * (config.Max - config.Min);
+                    // R2 (pitch): cap to PitchFillMaxPosition for safety
+                    // R1 (roll): use full config range
+                    if (config.IsPitch)
+                        grindPos = figure8Value * PitchFillMaxPosition;
+                    else
+                        grindPos = config.Min + figure8Value * (config.Max - config.Min);
                 }
 
                 var grindVal = (int)(grindPos / 100.0 * 999);
@@ -687,6 +681,8 @@ public class TCodeService : IDisposable
                 }
 
                 var randomPos = generator.GetPosition(progress);
+                // Safety cap: limit pitch fills to 0-PitchFillMaxPosition
+                randomPos = ClampPitchFillPosition(config, randomPos);
                 var targetVal = (int)(randomPos / 100.0 * 999);
                 targetVal = Math.Clamp(targetVal, 0, 999);
                 targetVal = ApplyPositionOffset(config, targetVal);
@@ -729,8 +725,9 @@ public class TCodeService : IDisposable
 
                 // PatternGenerator.Calculate returns 0.0–1.0
                 var patternValue = PatternGenerator.Calculate(config.FillMode, fillTime);
-                // Map 0.0–1.0 to position 0–100, then to TCode via min/max
+                // Map 0.0–1.0 to position 0–100, then cap pitch fills for safety
                 var position = patternValue * 100.0;
+                position = ClampPitchFillPosition(config, position);
                 var targetVal = ApplyPositionOffset(config, PositionToTCode(config, position));
 
                 var finalVal = ApplyRampUp(config.Id, targetVal);
@@ -825,6 +822,17 @@ public class TCodeService : IDisposable
     }
 
     /// <summary>
+    /// Clamps the fill-mode position to 0–<see cref="PitchFillMaxPosition"/> for pitch (R2) axes.
+    /// Non-pitch axes are returned unchanged. This prevents device damage from excessive pitch travel.
+    /// </summary>
+    internal static double ClampPitchFillPosition(AxisConfig config, double position)
+    {
+        if (config.IsPitch)
+            return Math.Clamp(position, 0, PitchFillMaxPosition);
+        return position;
+    }
+
+    /// <summary>
     /// Applies per-axis position offset to a TCode value.
     /// L0: offset is -50 to +50 (percentage points), added after min/max scaling, result clamped 0–999.
     /// R0: offset is 0–359 (degrees), rotated via modular wrapping.
@@ -901,6 +909,35 @@ public class TCodeService : IDisposable
 
         _transport.Send(FormatTCodeCommand(config, offsetTcode, 200) + "\n");
         _lastSentValues[axisId] = offsetTcode;
+    }
+
+    /// <summary>
+    /// Duration in milliseconds for the homing movement on connect.
+    /// All axes glide from their current position to midpoint (500) over this duration.
+    /// </summary>
+    internal const int HomingDurationMs = 2000;
+
+    /// <summary>
+    /// Gradually moves all configured axes to their offset-adjusted midpoint over <see cref="HomingDurationMs"/>.
+    /// Sends a single compound TCode command with a long interval so the device
+    /// smoothly glides from whatever position it is currently in to center.
+    /// Respects per-axis position offsets (e.g. L0 stroke offset, R0 twist offset).
+    /// Called immediately after connecting, before normal output begins.
+    /// </summary>
+    public void HomeAxes()
+    {
+        if (_transport?.IsConnected != true || _axisConfigs.Count == 0) return;
+
+        var parts = new List<string>();
+        foreach (var config in _axisConfigs)
+        {
+            // Start from the 50% midpoint, then apply the user's position offset
+            var homeTcode = ApplyPositionOffset(config, PositionToTCode(config, 50.0));
+            parts.Add(FormatTCodeCommand(config, homeTcode, HomingDurationMs));
+            _lastSentValues[config.Id] = homeTcode;
+        }
+
+        _transport.Send(string.Join(" ", parts) + "\n");
     }
 
     // ===== Test Axis State =====

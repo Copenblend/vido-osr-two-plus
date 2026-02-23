@@ -239,13 +239,20 @@ public class AxisControlViewModel : INotifyPropertyChanged
         }
     }
 
-    /// <summary>Updates device connection state.</summary>
+    /// <summary>Updates device connection state. Stops test mode on disconnect.</summary>
     public void SetDeviceConnected(bool connected)
     {
         if (_isDeviceConnected != connected)
         {
             _isDeviceConnected = connected;
             OnPropertyChanged(nameof(IsTestEnabled));
+        }
+
+        // Stop all test axes when device disconnects
+        if (!connected)
+        {
+            _tcode.StopAllTestAxes();
+            IsTesting = false;
         }
     }
 
@@ -377,23 +384,15 @@ public class AxisControlViewModel : INotifyPropertyChanged
         {
             if (!IsTestEnabled) return;
 
-            // Start test on each enabled axis that is testable
+            // Start test on each enabled axis
             foreach (var config in _configs)
             {
                 if (!config.Enabled) continue;
 
-                // L0 always gets Triangle at its FillSpeedHz (default 1.0)
-                if (config.IsStroke)
-                {
-                    _tcode.StartTestAxis(config.Id, config.FillSpeedHz);
-                    continue;
-                }
-
-                // Non-stroke axes: only test if fill mode is set
-                if (config.FillMode != AxisFillMode.None)
-                {
-                    _tcode.StartTestAxis(config.Id, config.FillSpeedHz);
-                }
+                // Start all enabled axes — even those with FillMode.None.
+                // The output loop skips None fills but keeps the axis in the
+                // test set, so switching fill mode mid-test takes effect immediately.
+                _tcode.StartTestAxis(config.Id, config.FillSpeedHz);
             }
 
             IsTesting = true;
