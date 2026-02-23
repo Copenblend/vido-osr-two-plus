@@ -62,8 +62,18 @@ Compress-Archive -Path (Join-Path $PSScriptRoot 'stage\*') -DestinationPath $zip
 
 # 5. Deploy to local Vido plugins directory for testing
 Write-Host "Deploying to $deployDir..." -ForegroundColor Yellow
-if (Test-Path $deployDir) { Remove-Item $deployDir -Recurse -Force }
-Copy-Item $stageDir $deployDir -Recurse
+try {
+    if (Test-Path $deployDir) { Remove-Item $deployDir -Recurse -Force -ErrorAction Stop }
+} catch {
+    # Some files may be locked (e.g. by a previous host process).
+    # Remove what we can, then overwrite the rest.
+    Write-Host "  Warning: could not fully clean deploy dir (locked files). Overwriting..." -ForegroundColor Yellow
+    Get-ChildItem $deployDir -Recurse -Force -ErrorAction SilentlyContinue |
+        Where-Object { -not $_.PSIsContainer } |
+        ForEach-Object { try { Remove-Item $_.FullName -Force -ErrorAction Stop } catch {} }
+}
+if (-not (Test-Path $deployDir)) { New-Item $deployDir -ItemType Directory -Force | Out-Null }
+Copy-Item (Join-Path $stageDir '*') $deployDir -Recurse -Force
 
 # 6. Cleanup staging
 Remove-Item (Join-Path $PSScriptRoot 'stage') -Recurse -Force
