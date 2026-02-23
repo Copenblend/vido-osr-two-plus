@@ -357,7 +357,7 @@ public class TCodeService : IDisposable
             if (_isPlaying && _scripts.TryGetValue(config.Id, out var script))
             {
                 var position = _interpolation.GetPosition(script, currentTimeMs, config.Id);
-                var tcodeValue = PositionToTCode(config, position);
+                var tcodeValue = ApplyPositionOffset(config, PositionToTCode(config, position));
 
                 if (IsDirty(config.Id, tcodeValue))
                 {
@@ -386,6 +386,7 @@ public class TCodeService : IDisposable
 
                 var grindVal = (int)(grindPos / 100.0 * 999);
                 grindVal = Math.Clamp(grindVal, 0, 999);
+                grindVal = ApplyPositionOffset(config, grindVal);
 
                 var finalGrindVal = ApplyRampUp(config.Id, grindVal);
                 if (IsDirty(config.Id, finalGrindVal))
@@ -416,6 +417,7 @@ public class TCodeService : IDisposable
                 var randomPos = generator.GetPosition(progress);
                 var targetVal = (int)(randomPos / 100.0 * 999);
                 targetVal = Math.Clamp(targetVal, 0, 999);
+                targetVal = ApplyPositionOffset(config, targetVal);
 
                 var randomVal = ApplyRampUp(config.Id, targetVal);
                 if (IsDirty(config.Id, randomVal))
@@ -450,7 +452,7 @@ public class TCodeService : IDisposable
                 var patternValue = PatternGenerator.Calculate(config.FillMode, fillTime);
                 // Map 0.0–1.0 to position 0–100, then to TCode via min/max
                 var position = patternValue * 100.0;
-                var targetVal = PositionToTCode(config, position);
+                var targetVal = ApplyPositionOffset(config, PositionToTCode(config, position));
 
                 var finalVal = ApplyRampUp(config.Id, targetVal);
                 if (IsDirty(config.Id, finalVal))
@@ -546,6 +548,36 @@ public class TCodeService : IDisposable
         var scaled = config.Min + normalized * (config.Max - config.Min);
         var tcodeValue = (int)(scaled / 100.0 * 999);
         return Math.Clamp(tcodeValue, 0, 999);
+    }
+
+    /// <summary>
+    /// Applies per-axis position offset to a TCode value.
+    /// L0: offset is -50 to +50 (percentage points), added after min/max scaling, result clamped 0–999.
+    /// R0: offset is 0–359 (degrees), rotated via modular wrapping.
+    /// R1, R2: no offset applied.
+    /// </summary>
+    internal static int ApplyPositionOffset(AxisConfig config, int tcodeValue)
+    {
+        if (config.PositionOffset == 0 || !config.HasPositionOffset)
+            return tcodeValue;
+
+        if (config.Id == "L0")
+        {
+            // L0: offset is percentage points (-50 to +50) added to the scaled position
+            var offsetTcode = (int)(config.PositionOffset / 100.0 * 999);
+            return Math.Clamp(tcodeValue + offsetTcode, 0, 999);
+        }
+
+        if (config.Id == "R0")
+        {
+            // R0: offset is degrees (0–359), wrapping via modulo
+            var offsetTcode = (int)(config.PositionOffset / 360.0 * 999);
+            var result = (tcodeValue + offsetTcode) % 1000;
+            if (result < 0) result += 1000;
+            return result;
+        }
+
+        return tcodeValue;
     }
 
     /// <summary>

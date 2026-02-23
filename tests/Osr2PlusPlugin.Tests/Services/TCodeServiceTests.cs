@@ -827,6 +827,121 @@ public class TCodeServiceTests : IDisposable
             "Fill mode should produce output even when not playing");
     }
 
+    // ===== Position Offset — ApplyPositionOffset =====
+
+    // --- L0 offset (clamping) ---
+
+    [Theory]
+    [InlineData(500, 0, 500)]     // No offset
+    [InlineData(500, 50, 999)]    // +50% → 500 + 499 = 999
+    [InlineData(500, -50, 1)]     // -50% → 500 - 499 = 1
+    [InlineData(0, 50, 499)]      // 0 + 499 = 499
+    [InlineData(999, -50, 500)]   // 999 - 499 = 500
+    [InlineData(0, -50, 0)]       // 0 - 499 = -499 → clamped to 0
+    [InlineData(999, 50, 999)]    // 999 + 499 = 1498 → clamped to 999
+    public void ApplyPositionOffset_L0_ClampsCorrectly(int tcodeIn, double offset, int expected)
+    {
+        var config = new AxisConfig { Id = "L0", Type = "linear", PositionOffset = offset };
+        var result = TCodeService.ApplyPositionOffset(config, tcodeIn);
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void ApplyPositionOffset_L0_ZeroOffset_NoChange()
+    {
+        var config = new AxisConfig { Id = "L0", Type = "linear", PositionOffset = 0 };
+        Assert.Equal(500, TCodeService.ApplyPositionOffset(config, 500));
+    }
+
+    // --- R0 offset (wrapping) ---
+
+    [Theory]
+    [InlineData(500, 0, 500)]       // No offset
+    [InlineData(500, 180, 999)]     // 500 + 499 = 999 (half rotation)
+    [InlineData(0, 360, 999)]       // (0 + 999) % 1000 = 999
+    [InlineData(500, 360, 499)]     // (500 + 999) % 1000 = 499
+    [InlineData(1, 360, 0)]         // (1 + 999) % 1000 = 0
+    public void ApplyPositionOffset_R0_WrapsCorrectly(int tcodeIn, double offset, int expected)
+    {
+        var config = new AxisConfig { Id = "R0", Type = "rotation", PositionOffset = offset };
+        var result = TCodeService.ApplyPositionOffset(config, tcodeIn);
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void ApplyPositionOffset_R0_NegativeOffset_WrapsBackward()
+    {
+        // R0 at TCode 100, offset -90 degrees → (100 + (-249)) = -149 → (-149 + 1000) = 851
+        var config = new AxisConfig { Id = "R0", Type = "rotation", PositionOffset = -90 };
+        var result = TCodeService.ApplyPositionOffset(config, 100);
+        var expectedOffset = (int)(-90.0 / 360.0 * 999); // -249
+        var expected = (100 + expectedOffset) % 1000;
+        if (expected < 0) expected += 1000;
+        Assert.Equal(expected, result);
+    }
+
+    // --- R1, R2: no offset ---
+
+    [Theory]
+    [InlineData("R1")]
+    [InlineData("R2")]
+    public void ApplyPositionOffset_R1R2_NoOffsetApplied(string axisId)
+    {
+        var config = new AxisConfig { Id = axisId, Type = "rotation", PositionOffset = 50 };
+        var result = TCodeService.ApplyPositionOffset(config, 500);
+        Assert.Equal(500, result); // Unchanged despite offset being set
+    }
+
+    // --- Combined with min/max ---
+
+    [Fact]
+    public void PositionOffset_CombinedWithMinMax_L0()
+    {
+        // Min=0, Max=70, Position=0 → scaled=0 → TCode=0, then +50 offset → +499 → 499
+        var config = new AxisConfig { Id = "L0", Type = "linear", Max = 70, PositionOffset = 50 };
+        var tcode = TCodeService.PositionToTCode(config, 0); // 0
+        var result = TCodeService.ApplyPositionOffset(config, tcode);
+        Assert.Equal(499, result);
+    }
+
+    [Fact]
+    public void PositionOffset_CombinedWithMinMax_L0_Clamped()
+    {
+        // Min=0, Max=70, Position=100 → scaled=70 → TCode=699, then +50 → +499 → 1198 → clamped 999
+        var config = new AxisConfig { Id = "L0", Type = "linear", Max = 70, PositionOffset = 50 };
+        var tcode = TCodeService.PositionToTCode(config, 100); // 699
+        var result = TCodeService.ApplyPositionOffset(config, tcode);
+        Assert.Equal(999, result);
+    }
+
+    // --- Integration: offset applied in output tick ---
+
+    [Fact]
+    public void OutputTick_L0Offset_ShiftsOutput()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        configs[0].PositionOffset = 50; // L0 offset +50%
+        _sut.SetAxisConfigs(configs);
+
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(10000, 0) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(5000); // Position = 0 → TCode 0 → with +50 offset → ~499
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        Assert.True(_transport.SentMessages.Count > 0);
+        var msg = _transport.SentMessages[0];
+        // Should contain L0 with value near 499 (not 000)
+        Assert.Contains("L0", msg);
+        Assert.DoesNotContain("L0000", msg); // Not unshifted zero
+    }
+
     // ===== SleepPrecise =====
 
     [Fact]
