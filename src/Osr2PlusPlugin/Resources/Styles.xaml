@@ -35,6 +35,10 @@
     <Color x:Key="ButtonBackgroundColor">#3C3C3C</Color>
     <Color x:Key="ButtonHoverColor">#4C4C4C</Color>
     <Color x:Key="ButtonPressedColor">#007ACC</Color>
+    <Color x:Key="ConnectButtonColor">#0078D4</Color>
+    <Color x:Key="ConnectButtonHoverColor">#026EC1</Color>
+    <Color x:Key="DisconnectButtonColor">#C42B1C</Color>
+    <Color x:Key="DisconnectButtonHoverColor">#A32316</Color>
 
     <!-- ── Brushes ────────────────────────────────────────── -->
     <SolidColorBrush x:Key="PanelBackgroundBrush" Color="{StaticResource PanelBackgroundColor}" />
@@ -62,6 +66,10 @@
     <SolidColorBrush x:Key="ButtonBackgroundBrush" Color="{StaticResource ButtonBackgroundColor}" />
     <SolidColorBrush x:Key="ButtonHoverBrush" Color="{StaticResource ButtonHoverColor}" />
     <SolidColorBrush x:Key="ButtonPressedBrush" Color="{StaticResource ButtonPressedColor}" />
+    <SolidColorBrush x:Key="ConnectButtonBrush" Color="{StaticResource ConnectButtonColor}" />
+    <SolidColorBrush x:Key="ConnectButtonHoverBrush" Color="{StaticResource ConnectButtonHoverColor}" />
+    <SolidColorBrush x:Key="DisconnectButtonBrush" Color="{StaticResource DisconnectButtonColor}" />
+    <SolidColorBrush x:Key="DisconnectButtonHoverBrush" Color="{StaticResource DisconnectButtonHoverColor}" />
 
     <!-- ═══════════════════════════════════════════════════════
          STYLES
@@ -142,7 +150,8 @@
         <Setter Property="BorderBrush" Value="{StaticResource CardBorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="CaretBrush" Value="{StaticResource TextPrimaryBrush}" />
-        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="Padding" Value="6,4" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TextBox">
@@ -179,7 +188,7 @@
         <Setter Property="Background" Value="{StaticResource InputBackgroundBrush}" />
         <Setter Property="BorderBrush" Value="{StaticResource CardBorderBrush}" />
         <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="Padding" Value="6,4" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ComboBox">
@@ -219,7 +228,7 @@
                                           IsHitTestVisible="False"
                                           Content="{TemplateBinding SelectionBoxItem}"
                                           ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
-                                          Margin="8,4,24,4"
+                                          Margin="6,4,24,4"
                                           VerticalAlignment="Center" />
                         <Popup x:Name="Popup"
                                Placement="Bottom"
@@ -361,44 +370,78 @@
     </Style>
 
     <!-- ── Slider ─────────────────────────────────────────── -->
+
+    <!-- Decrease (left of thumb) — filled accent bar -->
+    <Style x:Key="Osr2SliderDecreaseButtonStyle" TargetType="RepeatButton">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Height="3" CornerRadius="1.5"
+                            Background="{StaticResource AccentBrush}" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Increase (right of thumb) — unfilled track -->
+    <Style x:Key="Osr2SliderIncreaseButtonStyle" TargetType="RepeatButton">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Height="3" CornerRadius="1.5"
+                            Background="{StaticResource CardBorderBrush}" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Thumb — 12px white circle -->
     <Style x:Key="Osr2SliderThumbStyle" TargetType="Thumb">
-        <Setter Property="Width" Value="0" />
-        <Setter Property="Height" Value="0" />
+        <Setter Property="Width" Value="12" />
+        <Setter Property="Height" Value="12" />
+        <Setter Property="OverridesDefaultStyle" Value="True" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Thumb">
-                    <Border Background="Transparent" />
+                    <Ellipse x:Name="ThumbEllipse"
+                             Width="12" Height="12"
+                             Fill="White"
+                             Stroke="Transparent" StrokeThickness="1" />
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="ThumbEllipse" Property="Stroke" Value="{StaticResource AccentBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
     </Style>
 
     <Style x:Key="Osr2SliderStyle" TargetType="Slider">
-        <Setter Property="Height" Value="16" />
+        <Setter Property="Height" Value="18" />
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="IsMoveToPointEnabled" Value="True" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Slider">
                     <Grid VerticalAlignment="Center">
-                        <!-- Track background (unfilled) -->
-                        <Border Height="3" CornerRadius="1.5"
-                                Background="{StaticResource CardBorderBrush}" />
-                        <!-- Track fill (accent) -->
-                        <Canvas ClipToBounds="True">
-                            <Border x:Name="TrackFill" Height="3" CornerRadius="1.5"
-                                    Background="{StaticResource AccentBrush}"
-                                    Canvas.Top="0"
-                                    Width="{TemplateBinding ActualWidth}" />
-                        </Canvas>
                         <Track x:Name="PART_Track">
                             <Track.DecreaseRepeatButton>
-                                <RepeatButton Command="Slider.DecreaseLarge" Opacity="0" />
+                                <RepeatButton Command="Slider.DecreaseLarge"
+                                              Style="{StaticResource Osr2SliderDecreaseButtonStyle}" />
                             </Track.DecreaseRepeatButton>
                             <Track.Thumb>
                                 <Thumb Style="{StaticResource Osr2SliderThumbStyle}" />
                             </Track.Thumb>
                             <Track.IncreaseRepeatButton>
-                                <RepeatButton Command="Slider.IncreaseLarge" Opacity="0" />
+                                <RepeatButton Command="Slider.IncreaseLarge"
+                                              Style="{StaticResource Osr2SliderIncreaseButtonStyle}" />
                             </Track.IncreaseRepeatButton>
                         </Track>
                     </Grid>
