@@ -1,6 +1,7 @@
 using Vido.Core.Events;
 using Vido.Core.Playback;
 using Vido.Core.Plugin;
+using Osr2PlusPlugin.Services;
 using Osr2PlusPlugin.Views;
 
 namespace Osr2PlusPlugin;
@@ -14,11 +15,12 @@ public class Osr2PlusPlugin : IVidoPlugin
 {
     private IPluginContext? _context;
 
-    // Services (created in future tickets)
+    // Services
+    private FunscriptParser? _parser;
+    private FunscriptMatcher? _matcher;
+    private FunscriptLoadingService? _scriptLoader;
     // private TCodeService? _tcode;
     // private InterpolationService? _interpolation;
-    // private FunscriptParser? _parser;
-    // private FunscriptMatcher? _matcher;
     // private ITransportService? _transport;
 
     // ViewModels (created in future tickets)
@@ -34,11 +36,11 @@ public class Osr2PlusPlugin : IVidoPlugin
         _context = context;
 
         // ── Create Services ──────────────────────────────────
-        // TODO (VOSR-005+): Instantiate services
+        _parser = new FunscriptParser();
+        _matcher = new FunscriptMatcher();
+        _scriptLoader = new FunscriptLoadingService(_parser, _matcher);
         // _interpolation = new InterpolationService();
         // _tcode = new TCodeService(_interpolation);
-        // _parser = new FunscriptParser();
-        // _matcher = new FunscriptMatcher();
 
         // ── Create ViewModels ────────────────────────────────
         // TODO (VOSR-017+): Instantiate ViewModels
@@ -88,14 +90,35 @@ public class Osr2PlusPlugin : IVidoPlugin
     private void OnVideoLoaded(VideoLoadedEvent e)
     {
         _context?.Logger.Debug($"Video loaded: {e.FilePath}", "OSR2+");
-        // TODO (VOSR-008): Match funscript files to video
-        // TODO (VOSR-009): Parse matched funscripts
+
+        if (_scriptLoader is null || _context is null) return;
+
+        var logs = _scriptLoader.LoadScriptsForVideo(e.FilePath);
+        foreach (var log in logs)
+        {
+            _context.Logger.Info(log, "OSR2+");
+        }
+
+        // TODO (VOSR-014): Update TCodeService with loaded scripts
+        // TODO (VOSR-020+): Update AxisCardViewModels with script info
+        // TODO (VOSR-032+): Update VisualizerViewModel with script data
     }
 
     private void OnVideoUnloaded(VideoUnloadedEvent e)
     {
         _context?.Logger.Debug("Video unloaded", "OSR2+");
-        // TODO (VOSR-009): Clear loaded funscripts
+
+        if (_scriptLoader is null || _context is null) return;
+
+        var logs = _scriptLoader.ClearScripts();
+        foreach (var log in logs)
+        {
+            _context.Logger.Info(log, "OSR2+");
+        }
+
+        // TODO (VOSR-014): Reset TCodeService
+        // TODO (VOSR-020+): Reset AxisCardViewModels
+        // TODO (VOSR-032+): Reset VisualizerViewModel
     }
 
     private void OnPlaybackStateChanged(PlaybackStateChangedEvent e)
