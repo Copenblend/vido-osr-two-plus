@@ -39,6 +39,27 @@ public class TCodeService : IDisposable
     // Dirty value tracking: only send axes whose TCode value changed
     private readonly Dictionary<string, int> _lastSentValues = new();
 
+    // ===== Fill Mode State =====
+
+    // Random pattern generators — one per axis
+    private readonly Dictionary<string, RandomPatternGenerator> _randomGenerators = new();
+
+    // Stroke tracking for grind/random synchronization
+    private double _lastStrokePosition = 50.0;
+    private double _cumulativeStrokeDistance;
+
+    // Per-axis cumulative fill time (for independent pattern fill)
+    private readonly Dictionary<string, double> _cumulativeFillTime = new();
+
+    // Return-to-center: axis ID → current interpolated TCode position
+    private readonly Dictionary<string, double> _returningAxes = new();
+
+    // Ramp-up: axis ID → blend factor (0.0 = midpoint, 1.0 = fully active)
+    private readonly Dictionary<string, double> _rampingAxes = new();
+
+    // Previous axis state snapshot for detecting transitions
+    private readonly Dictionary<string, (bool Enabled, AxisFillMode FillMode)> _prevAxisState = new();
+
     /// <summary>Current output rate in Hz.</summary>
     public int OutputRateHz => _outputRateHz;
 
@@ -73,13 +94,52 @@ public class TCodeService : IDisposable
         _scripts = scripts;
         _lastSentValues.Clear();
         _interpolation.ResetIndices();
+        // Reset stroke tracking and random generators on script change
+        _cumulativeStrokeDistance = 0;
+        _lastStrokePosition = 50.0;
+        _cumulativeFillTime.Clear();
+        foreach (var gen in _randomGenerators.Values) gen.Reset();
     }
 
     /// <summary>
     /// Set the axis configurations (min/max/enabled/fill mode).
+    /// Detects transitions to trigger ramp-up and return-to-center animations.
     /// </summary>
     public void SetAxisConfigs(List<AxisConfig> configs)
     {
+        foreach (var cfg in configs)
+        {
+            bool hasPrev = _prevAxisState.TryGetValue(cfg.Id, out var prev);
+            if (hasPrev)
+            {
+                bool wasEnabled = prev.Enabled;
+                bool wasActiveFill = prev.Enabled && prev.FillMode != AxisFillMode.None;
+                bool nowEnabled = cfg.Enabled;
+                bool nowActiveFill = cfg.Enabled && cfg.FillMode != AxisFillMode.None;
+
+                // Return-to-center when: axis disabled, OR fill mode set to None
+                bool justDisabled = wasEnabled && !nowEnabled;
+                bool fillJustCleared = wasActiveFill && nowEnabled && cfg.FillMode == AxisFillMode.None;
+                if (justDisabled || fillJustCleared)
+                {
+                    if (_lastSentValues.TryGetValue(cfg.Id, out var lastVal) && Math.Abs(lastVal - 500) >= 1)
+                    {
+                        _returningAxes[cfg.Id] = lastVal;
+                    }
+                    _rampingAxes.Remove(cfg.Id);
+                }
+
+                // Ramp-up when: axis activated with active fill from inactive state
+                bool justActivated = nowActiveFill && (!wasActiveFill || !wasEnabled);
+                if (justActivated)
+                {
+                    _returningAxes.Remove(cfg.Id);
+                    _rampingAxes[cfg.Id] = 0.0;
+                }
+            }
+
+            _prevAxisState[cfg.Id] = (cfg.Enabled, cfg.FillMode);
+        }
         _axisConfigs = configs;
     }
 
@@ -212,9 +272,13 @@ public class TCodeService : IDisposable
 
             try
             {
-                if (_transport?.IsConnected == true && _isPlaying)
+                if (_transport?.IsConnected == true)
                 {
-                    OutputTick(elapsedSec);
+                    bool hasFillOrReturn = HasActiveFillModes();
+                    if (_isPlaying || hasFillOrReturn)
+                    {
+                        OutputTick(elapsedSec);
+                    }
                 }
             }
             catch
@@ -266,12 +330,31 @@ public class TCodeService : IDisposable
 
         var parts = new List<string>();
 
+        // === First pass: compute L0 stroke position for grind/random sync ===
+        double strokePosition = 50.0;
+        bool hasStrokeScript = false;
+        var strokeConfig = _axisConfigs.FirstOrDefault(c => c.Id == "L0" && c.Enabled);
+        if (strokeConfig != null && _scripts.TryGetValue("L0", out var strokeScript))
+        {
+            strokePosition = _interpolation.GetPosition(strokeScript, currentTimeMs, "L0");
+            hasStrokeScript = true;
+        }
+        // Accumulate stroke travel distance for random/sync fill speed
+        _cumulativeStrokeDistance += Math.Abs(strokePosition - _lastStrokePosition);
+        _lastStrokePosition = strokePosition;
+
+        // === Per-axis loop ===
         foreach (var config in _axisConfigs)
         {
-            if (!config.Enabled) continue;
+            // Disabled axis: finish return-to-center, skip everything else
+            if (!config.Enabled)
+            {
+                ProcessReturnToCenter(config, intervalMs, parts);
+                continue;
+            }
 
             // Scripted axis: interpolate position from funscript
-            if (_scripts.TryGetValue(config.Id, out var script))
+            if (_isPlaying && _scripts.TryGetValue(config.Id, out var script))
             {
                 var position = _interpolation.GetPosition(script, currentTimeMs, config.Id);
                 var tcodeValue = PositionToTCode(config, position);
@@ -281,17 +364,175 @@ public class TCodeService : IDisposable
                     parts.Add(FormatTCodeCommand(config, tcodeValue, intervalMs));
                     _lastSentValues[config.Id] = tcodeValue;
                 }
+                continue;
             }
 
-            // Fill mode handling added in VOSR-016
-            // Position offset added in VOSR-017
-            // Test mode added in VOSR-018
+            // === Fill mode (no script for this axis) ===
+            if (config.FillMode == AxisFillMode.None)
+            {
+                ProcessReturnToCenter(config, intervalMs, parts);
+                continue;
+            }
+
+            // --- Grind / ReverseGrind (R2 only) ---
+            if (config.FillMode is AxisFillMode.Grind or AxisFillMode.ReverseGrind
+                && config.Id == "R2")
+            {
+                double grindPos;
+                if (config.FillMode == AxisFillMode.Grind)
+                    grindPos = config.Min + (strokePosition / 100.0) * (config.Max - config.Min);
+                else // ReverseGrind
+                    grindPos = config.Max - (strokePosition / 100.0) * (config.Max - config.Min);
+
+                var grindVal = (int)(grindPos / 100.0 * 999);
+                grindVal = Math.Clamp(grindVal, 0, 999);
+
+                var finalGrindVal = ApplyRampUp(config.Id, grindVal);
+                if (IsDirty(config.Id, finalGrindVal))
+                {
+                    parts.Add(FormatTCodeCommand(config, finalGrindVal, intervalMs));
+                    _lastSentValues[config.Id] = finalGrindVal;
+                }
+                continue;
+            }
+
+            // --- Random fill ---
+            if (config.FillMode == AxisFillMode.Random)
+            {
+                if (!_randomGenerators.TryGetValue(config.Id, out var generator))
+                {
+                    generator = new RandomPatternGenerator(config.Min, config.Max);
+                    _randomGenerators[config.Id] = generator;
+                }
+                generator.SetRange(config.Min, config.Max);
+
+                // Use cumulative stroke distance when synced; otherwise time-based
+                double progress;
+                if (config.SyncWithStroke && config.Id != "L0" && hasStrokeScript)
+                    progress = _cumulativeStrokeDistance;
+                else
+                    progress = currentTimeMs;
+
+                var randomPos = generator.GetPosition(progress);
+                var targetVal = (int)(randomPos / 100.0 * 999);
+                targetVal = Math.Clamp(targetVal, 0, 999);
+
+                var randomVal = ApplyRampUp(config.Id, targetVal);
+                if (IsDirty(config.Id, randomVal))
+                {
+                    parts.Add(FormatTCodeCommand(config, randomVal, intervalMs));
+                    _lastSentValues[config.Id] = randomVal;
+                }
+                continue;
+            }
+
+            // --- Waveform fill (Triangle, Sine, Saw, etc.) ---
+            {
+                // Advance fill time
+                double fillTime;
+                if (config.SyncWithStroke && config.Id != "L0" && hasStrokeScript)
+                {
+                    // Sync with stroke: use cumulative stroke distance as time base
+                    // Normalize: a full stroke cycle ≈ 200 distance units → 1.0 period
+                    fillTime = _cumulativeStrokeDistance * config.FillSpeedHz / 200.0;
+                }
+                else
+                {
+                    // Independent: accumulate time based on fill speed
+                    if (!_cumulativeFillTime.TryGetValue(config.Id, out var cumTime))
+                        cumTime = 0;
+                    cumTime += config.FillSpeedHz * elapsedSec;
+                    _cumulativeFillTime[config.Id] = cumTime;
+                    fillTime = cumTime;
+                }
+
+                // PatternGenerator.Calculate returns 0.0–1.0
+                var patternValue = PatternGenerator.Calculate(config.FillMode, fillTime);
+                // Map 0.0–1.0 to position 0–100, then to TCode via min/max
+                var position = patternValue * 100.0;
+                var targetVal = PositionToTCode(config, position);
+
+                var finalVal = ApplyRampUp(config.Id, targetVal);
+                if (IsDirty(config.Id, finalVal))
+                {
+                    parts.Add(FormatTCodeCommand(config, finalVal, intervalMs));
+                    _lastSentValues[config.Id] = finalVal;
+                }
+            }
         }
 
         if (parts.Count > 0)
         {
             _transport?.Send(string.Join(" ", parts) + "\n");
         }
+    }
+
+    // ===== Fill Mode Helpers =====
+
+    /// <summary>
+    /// Applies exponential ramp-up blend from midpoint (500) to target.
+    /// </summary>
+    private int ApplyRampUp(string axisId, int targetVal)
+    {
+        if (!_rampingAxes.TryGetValue(axisId, out var blend))
+            return targetVal;
+
+        blend += (1.0 - blend) * 0.04;
+
+        if (blend >= 0.99)
+        {
+            _rampingAxes.Remove(axisId);
+            return targetVal;
+        }
+
+        _rampingAxes[axisId] = blend;
+        var blendedVal = (int)Math.Round(500.0 + (targetVal - 500.0) * blend);
+        return Math.Clamp(blendedVal, 0, 999);
+    }
+
+    /// <summary>
+    /// Processes return-to-center animation for disabled or fill-mode-None axes.
+    /// Exponential smoothing glide to midpoint (500) at factor 0.04/tick.
+    /// </summary>
+    private void ProcessReturnToCenter(AxisConfig config, int intervalMs, List<string> parts)
+    {
+        if (!_returningAxes.TryGetValue(config.Id, out var currentPos))
+            return;
+
+        var newPos = currentPos + (500.0 - currentPos) * 0.04;
+        var newVal = (int)Math.Round(newPos);
+        newVal = Math.Clamp(newVal, 0, 999);
+
+        if (Math.Abs(newPos - 500.0) < 1.0)
+        {
+            _returningAxes.Remove(config.Id);
+            newVal = 500;
+        }
+        else
+        {
+            _returningAxes[config.Id] = newPos;
+        }
+
+        if (IsDirty(config.Id, newVal))
+        {
+            parts.Add(FormatTCodeCommand(config, newVal, intervalMs));
+            _lastSentValues[config.Id] = newVal;
+        }
+    }
+
+    /// <summary>
+    /// Returns true if any axis has an active fill mode, or if there are
+    /// axes animating return-to-center. Used to keep the output thread active.
+    /// </summary>
+    private bool HasActiveFillModes()
+    {
+        if (_returningAxes.Count > 0) return true;
+        foreach (var config in _axisConfigs)
+        {
+            if (config.Enabled && config.FillMode != AxisFillMode.None)
+                return true;
+        }
+        return false;
     }
 
     // ===== Helpers =====
