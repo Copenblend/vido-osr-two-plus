@@ -4,7 +4,10 @@
 
 $ErrorActionPreference = 'Stop'
 
-$version    = '1.0.0'
+# Read PluginVersion from Directory.Build.props
+$propsPath = Join-Path $PSScriptRoot 'Directory.Build.props'
+[xml]$props = Get-Content $propsPath
+$version = $props.Project.PropertyGroup.PluginVersion | Where-Object { $_ }
 $pluginId   = 'com.vido.osr2-plus'
 $projectDir = Join-Path $PSScriptRoot 'src\Osr2PlusPlugin'
 $publishDir = Join-Path $PSScriptRoot 'publish'
@@ -75,7 +78,14 @@ try {
 if (-not (Test-Path $deployDir)) { New-Item $deployDir -ItemType Directory -Force | Out-Null }
 Copy-Item (Join-Path $stageDir '*') $deployDir -Recurse -Force
 
-# 6. Cleanup staging
+# 6. Copy zip to local test registry
+$testRegistryPackages = 'C:\source\testRegistry\packages'
+if (Test-Path $testRegistryPackages) {
+    Copy-Item $zipPath (Join-Path $testRegistryPackages $zipName) -Force
+    Write-Host "Copied to test registry: $testRegistryPackages\$zipName" -ForegroundColor Yellow
+}
+
+# 7. Cleanup staging
 Remove-Item (Join-Path $PSScriptRoot 'stage') -Recurse -Force
 
 Write-Host ''
