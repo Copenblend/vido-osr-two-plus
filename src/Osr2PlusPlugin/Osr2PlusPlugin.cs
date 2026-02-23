@@ -25,6 +25,7 @@ public class Osr2PlusPlugin : IVidoPlugin
     // ViewModels
     private SidebarViewModel? _sidebarVm;
     private AxisControlViewModel? _axisControlVm;
+    private VisualizerViewModel? _visualizerVm;
 
     // Event subscriptions
     private readonly List<IDisposable> _subscriptions = new();
@@ -42,6 +43,7 @@ public class Osr2PlusPlugin : IVidoPlugin
         // ── Create ViewModels ────────────────────────────────
         _sidebarVm = new SidebarViewModel(_tcode, context.Settings);
         _axisControlVm = new AxisControlViewModel(_tcode, context.Settings, _parser, _matcher);
+        _visualizerVm = new VisualizerViewModel(context.Settings);
 
         // Wire sidebar button to show/expand right panel
         _sidebarVm.ShowAxisSettingsRequested += () =>
@@ -50,12 +52,24 @@ public class Osr2PlusPlugin : IVidoPlugin
             context.Settings.Set("lastRightPanel", "osr2-axis-control");
         };
 
+        // Wire sidebar button to show/expand bottom panel
+        _sidebarVm.ShowVisualizerRequested += () =>
+        {
+            // Bottom panel is registered on activation and becomes available
+            // as a tab in the Vido bottom panel area. This event handler is
+            // ready for RequestShowBottomPanel when the API is available.
+            context.Logger.Debug("Show Funscript Visualizer requested", "OSR2+");
+        };
+
         // Wire device connection state to axis control
         _sidebarVm.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(SidebarViewModel.IsConnected))
                 _axisControlVm.SetDeviceConnected(_sidebarVm.IsConnected);
         };
+
+        // Wire script changes to visualizer
+        _axisControlVm.ScriptsChanged += scripts => _visualizerVm.SetLoadedAxes(scripts);
 
         // Wire file dialog factory for manual script loading
         foreach (var card in _axisControlVm.AxisCards)
@@ -80,6 +94,7 @@ public class Osr2PlusPlugin : IVidoPlugin
         // ── Register UI Contributions ────────────────────────
         context.RegisterSidebarPanel("osr2-sidebar", () => new SidebarView { DataContext = _sidebarVm });
         context.RegisterRightPanel("osr2-axis-control", () => new AxisControlView { DataContext = _axisControlVm });
+        context.RegisterBottomPanel("osr2-visualizer", () => new VisualizerView { DataContext = _visualizerVm });
 
         context.RegisterFileIcons(new Dictionary<string, string>
         {
@@ -128,6 +143,7 @@ public class Osr2PlusPlugin : IVidoPlugin
         _axisControlVm.ClearScripts();
         _tcode.SetPlaying(false);
         _axisControlVm.SetVideoPlaying(false);
+        _visualizerVm?.ClearAxes();
     }
 
     private void OnPlaybackStateChanged(PlaybackStateChangedEvent e)
@@ -144,6 +160,7 @@ public class Osr2PlusPlugin : IVidoPlugin
     private void OnPositionChanged(PlaybackPositionChangedEvent e)
     {
         _tcode?.SetTime(e.Position.TotalMilliseconds);
+        _visualizerVm?.UpdateTime(e.Position.TotalSeconds);
     }
 
     // ── Settings ─────────────────────────────────────────────

@@ -264,6 +264,12 @@
                     HorizontalAlignment="Stretch"
                     Margin="0,2" />
 
+            <Button Style="{StaticResource Osr2ButtonStyle}"
+                    Content="Show Funscript Visualizer"
+                    Command="{Binding ShowVisualizerCommand}"
+                    HorizontalAlignment="Stretch"
+                    Margin="0,2" />
+
         </StackPanel>
     </ScrollViewer>
 </UserControl>

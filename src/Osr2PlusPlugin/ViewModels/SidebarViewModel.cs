@@ -74,6 +74,11 @@ public class SidebarViewModel : INotifyPropertyChanged
     /// </summary>
     public event Action? ShowAxisSettingsRequested;
 
+    /// <summary>
+    /// Raised when the user requests the funscript visualizer panel to be shown.
+    /// </summary>
+    public event Action? ShowVisualizerRequested;
+
     // ===== Properties =====
 
     /// <summary>Selected connection mode (UDP or Serial).</summary>
@@ -192,6 +197,9 @@ public class SidebarViewModel : INotifyPropertyChanged
     /// <summary>Requests the axis settings panel to be shown.</summary>
     public ICommand ShowAxisSettingsCommand { get; }
 
+    /// <summary>Requests the funscript visualizer panel to be shown.</summary>
+    public ICommand ShowVisualizerCommand { get; }
+
     // ===== Constructor =====
 
     public SidebarViewModel(TCodeService tcode, IPluginSettingsStore settings)
@@ -206,6 +214,7 @@ public class SidebarViewModel : INotifyPropertyChanged
         ConnectCommand = new RelayCommand(ExecuteConnect);
         RefreshPortsCommand = new RelayCommand(ExecuteRefreshPorts);
         ShowAxisSettingsCommand = new RelayCommand(() => ShowAxisSettingsRequested?.Invoke());
+        ShowVisualizerCommand = new RelayCommand(() => ShowVisualizerRequested?.Invoke());
 
         // Load persisted settings
         LoadSettings();
