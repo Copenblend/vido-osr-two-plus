@@ -390,6 +390,184 @@ public class SidebarViewModelTests : IDisposable
         Assert.Contains(250000, _sut.AvailableBaudRates);
     }
 
+    // ═══════════════════════════════════════════════════════
+    //  StatusText — Initial / No Connection Attempted
+    // ═══════════════════════════════════════════════════════
+
+    [Fact]
+    public void StatusText_Initial_ShowsNotConnected()
+    {
+        Assert.Equal("OSR2+:Not Connected", _sut.StatusText);
+    }
+
+    [Fact]
+    public void StatusTextColor_Initial_IsDim()
+    {
+        Assert.Equal("#808080", _sut.StatusTextColor);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  StatusText — Connected (UDP)
+    // ═══════════════════════════════════════════════════════
+
+    [Fact]
+    public void StatusText_ConnectedUdp_ShowsUdpPortConnected()
+    {
+        _sut.Connect();
+
+        Assert.Equal("UDP:7777:Connected", _sut.StatusText);
+    }
+
+    [Fact]
+    public void StatusTextColor_Connected_IsGreen()
+    {
+        _sut.Connect();
+
+        Assert.Equal("#14CC00", _sut.StatusTextColor);
+    }
+
+    [Fact]
+    public void StatusText_ConnectedUdpCustomPort_ShowsCorrectPort()
+    {
+        _sut.UdpPort = 9999;
+        _sut.Connect();
+
+        Assert.Equal("UDP:9999:Connected", _sut.StatusText);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  StatusText — Connected (Serial)
+    // ═══════════════════════════════════════════════════════
+
+    [Fact]
+    public void StatusText_ConnectedSerial_ShowsComPortConnected()
+    {
+        _sut.SelectedMode = ConnectionMode.Serial;
+        _sut.SelectedComPort = "COM3";
+        _sut.Connect();
+
+        Assert.Equal("COM:COM3:Connected", _sut.StatusText);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  StatusText — Disconnected
+    // ═══════════════════════════════════════════════════════
+
+    [Fact]
+    public void StatusText_DisconnectedUdp_ShowsUdpPortDisconnected()
+    {
+        _sut.Connect();
+        _sut.Disconnect();
+
+        Assert.Equal("UDP:7777:Disconnected", _sut.StatusText);
+    }
+
+    [Fact]
+    public void StatusTextColor_Disconnected_IsRed()
+    {
+        _sut.Connect();
+        _sut.Disconnect();
+
+        Assert.Equal("#CC3333", _sut.StatusTextColor);
+    }
+
+    [Fact]
+    public void StatusText_DisconnectedSerial_ShowsComDisconnected()
+    {
+        _sut.SelectedMode = ConnectionMode.Serial;
+        _sut.SelectedComPort = "COM5";
+        _sut.Connect();
+        _sut.Disconnect();
+
+        Assert.Equal("COM:Disconnected", _sut.StatusText);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  StatusText — Failed Connection
+    // ═══════════════════════════════════════════════════════
+
+    [Fact]
+    public void StatusText_FailedConnect_ShowsDisconnected()
+    {
+        _sut.TransportFactory = (_, _, _, _) => (null, false);
+        _sut.Connect();
+
+        Assert.Equal("UDP:7777:Disconnected", _sut.StatusText);
+    }
+
+    [Fact]
+    public void StatusTextColor_FailedConnect_IsRed()
+    {
+        _sut.TransportFactory = (_, _, _, _) => (null, false);
+        _sut.Connect();
+
+        Assert.Equal("#CC3333", _sut.StatusTextColor);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  StatusText — Transport Drop
+    // ═══════════════════════════════════════════════════════
+
+    [Fact]
+    public void StatusText_TransportDrop_ShowsDisconnected()
+    {
+        _sut.Connect();
+        _mockTransport.SimulateConnectionDrop();
+
+        Assert.Equal("UDP:7777:Disconnected", _sut.StatusText);
+    }
+
+    [Fact]
+    public void StatusTextColor_TransportDrop_IsRed()
+    {
+        _sut.Connect();
+        _mockTransport.SimulateConnectionDrop();
+
+        Assert.Equal("#CC3333", _sut.StatusTextColor);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  StatusText — PropertyChanged Notifications
+    // ═══════════════════════════════════════════════════════
+
+    [Fact]
+    public void Connect_RaisesStatusTextPropertyChanged()
+    {
+        var raised = new List<string>();
+        _sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName!);
+
+        _sut.Connect();
+
+        Assert.Contains(nameof(SidebarViewModel.StatusText), raised);
+        Assert.Contains(nameof(SidebarViewModel.StatusTextColor), raised);
+    }
+
+    [Fact]
+    public void Disconnect_RaisesStatusTextPropertyChanged()
+    {
+        _sut.Connect();
+        var raised = new List<string>();
+        _sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName!);
+
+        _sut.Disconnect();
+
+        Assert.Contains(nameof(SidebarViewModel.StatusText), raised);
+        Assert.Contains(nameof(SidebarViewModel.StatusTextColor), raised);
+    }
+
+    [Fact]
+    public void FailedConnect_RaisesStatusTextPropertyChanged()
+    {
+        _sut.TransportFactory = (_, _, _, _) => (null, false);
+        var raised = new List<string>();
+        _sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName!);
+
+        _sut.Connect();
+
+        Assert.Contains(nameof(SidebarViewModel.StatusText), raised);
+        Assert.Contains(nameof(SidebarViewModel.StatusTextColor), raised);
+    }
+
     // ===== Mock Transport =====
 
     private class MockTransport : ITransportService
