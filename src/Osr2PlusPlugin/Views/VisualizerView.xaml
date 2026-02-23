@@ -3,17 +3,23 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:skia="clr-namespace:SkiaSharp.Views.WPF;assembly=SkiaSharp.Views.WPF"
              mc:Ignorable="d"
              d:DesignHeight="200" d:DesignWidth="800"
              Background="Transparent">
-    <!-- Placeholder: rendering is implemented in VOSR-027/028/029.
-         This stub satisfies the RegisterBottomPanel factory requirement. -->
     <Grid>
-        <TextBlock Text="Funscript Visualizer — loading…"
-                   Foreground="#999999"
+        <!-- SkiaSharp canvas for graph / heatmap rendering -->
+        <skia:SKElement x:Name="SkiaCanvas" PaintSurface="OnPaintSurface" />
+
+        <!-- Empty state overlay -->
+        <TextBlock x:Name="EmptyStateText"
+                   Text="No funscript loaded"
+                   Foreground="#CCCCCC"
+                   Opacity="0.4"
+                   FontSize="14"
+                   FontFamily="Segoe UI"
                    HorizontalAlignment="Center"
                    VerticalAlignment="Center"
-                   FontSize="13"
-                   FontFamily="Segoe UI" />
+                   IsHitTestVisible="False" />
     </Grid>
 </UserControl>
