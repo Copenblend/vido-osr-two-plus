@@ -73,14 +73,10 @@ public class AxisCardViewModelTests : IDisposable
         Assert.Equal(100, sut.Max);
         Assert.True(sut.Enabled);
         Assert.Equal(AxisFillMode.None, sut.FillMode);
-        Assert.False(sut.SyncWithStroke);
+        Assert.True(sut.SyncWithStroke);
         Assert.Equal(1.0, sut.FillSpeedHz);
         Assert.Equal(0.0, sut.PositionOffset);
-        Assert.Equal(1.0, sut.TestSpeedHz);
-        Assert.False(sut.IsTesting);
         Assert.False(sut.IsExpanded);
-        Assert.Equal("Test", sut.TestButtonText);
-        Assert.False(sut.IsTestEnabled);
         Assert.Null(sut.ScriptFileName);
         Assert.False(sut.HasScript);
         Assert.Equal("None", sut.ScriptDisplayName);
@@ -130,14 +126,12 @@ public class AxisCardViewModelTests : IDisposable
     // ═══════════════════════════════════════════════════════
 
     [Fact]
-    public void AvailableFillModes_StrokeDoesNotIncludeGrind()
+    public void AvailableFillModes_StrokeOnlyHasNone()
     {
         var sut = CreateSut(L0);
 
-        Assert.DoesNotContain(AxisFillMode.Grind, sut.AvailableFillModes);
-        Assert.DoesNotContain(AxisFillMode.ReverseGrind, sut.AvailableFillModes);
+        Assert.Single(sut.AvailableFillModes);
         Assert.Contains(AxisFillMode.None, sut.AvailableFillModes);
-        Assert.Contains(AxisFillMode.Triangle, sut.AvailableFillModes);
     }
 
     [Fact]
@@ -146,7 +140,7 @@ public class AxisCardViewModelTests : IDisposable
         var sut = CreateSut(R0);
 
         Assert.DoesNotContain(AxisFillMode.Grind, sut.AvailableFillModes);
-        Assert.DoesNotContain(AxisFillMode.ReverseGrind, sut.AvailableFillModes);
+        Assert.DoesNotContain(AxisFillMode.Figure8, sut.AvailableFillModes);
     }
 
     [Fact]
@@ -155,7 +149,21 @@ public class AxisCardViewModelTests : IDisposable
         var sut = CreateSut(R1);
 
         Assert.DoesNotContain(AxisFillMode.Grind, sut.AvailableFillModes);
-        Assert.DoesNotContain(AxisFillMode.ReverseGrind, sut.AvailableFillModes);
+    }
+
+    [Fact]
+    public void AvailableFillModes_RollIncludesFigure8()
+    {
+        var sut = CreateSut(R1);
+
+        Assert.Contains(AxisFillMode.Figure8, sut.AvailableFillModes);
+    }
+
+    [Fact]
+    public void AvailableFillModes_RollHasTenModes()
+    {
+        var sut = CreateSut(R1);
+        Assert.Equal(10, sut.AvailableFillModes.Length);
     }
 
     [Fact]
@@ -164,7 +172,7 @@ public class AxisCardViewModelTests : IDisposable
         var sut = CreateSut(R2);
 
         Assert.Contains(AxisFillMode.Grind, sut.AvailableFillModes);
-        Assert.Contains(AxisFillMode.ReverseGrind, sut.AvailableFillModes);
+        Assert.Contains(AxisFillMode.Figure8, sut.AvailableFillModes);
         Assert.Contains(AxisFillMode.None, sut.AvailableFillModes);
         Assert.Contains(AxisFillMode.Sine, sut.AvailableFillModes);
     }
@@ -177,9 +185,9 @@ public class AxisCardViewModelTests : IDisposable
     }
 
     [Fact]
-    public void AvailableFillModes_NonPitchHasNineModes()
+    public void AvailableFillModes_NonPitchNonStrokeHasNineModes()
     {
-        var sut = CreateSut(L0);
+        var sut = CreateSut(R0);
         Assert.Equal(9, sut.AvailableFillModes.Length);
     }
 
@@ -196,27 +204,31 @@ public class AxisCardViewModelTests : IDisposable
     }
 
     [Fact]
-    public void ShowSyncToggle_HiddenWhenFillModeNone()
+    public void ShowSyncToggle_VisibleWhenFillModeNone()
     {
         var sut = CreateSut(R0);
         sut.FillMode = AxisFillMode.None;
-        Assert.False(sut.ShowSyncToggle);
+        Assert.True(sut.ShowSyncToggle);
     }
 
     [Fact]
-    public void ShowSyncToggle_HiddenForGrind()
+    public void ShowSyncToggle_VisibleForGrind_ButNotEditable()
     {
         var sut = CreateSut(R2);
         sut.FillMode = AxisFillMode.Grind;
-        Assert.False(sut.ShowSyncToggle);
+        Assert.True(sut.ShowSyncToggle);
+        Assert.False(sut.IsSyncEditable);
+        Assert.True(sut.SyncWithStroke); // Auto-selected
     }
 
     [Fact]
-    public void ShowSyncToggle_HiddenForReverseGrind()
+    public void ShowSyncToggle_VisibleForFigure8_ButNotEditable()
     {
         var sut = CreateSut(R2);
-        sut.FillMode = AxisFillMode.ReverseGrind;
-        Assert.False(sut.ShowSyncToggle);
+        sut.FillMode = AxisFillMode.Figure8;
+        Assert.True(sut.ShowSyncToggle);
+        Assert.False(sut.IsSyncEditable);
+        Assert.True(sut.SyncWithStroke); // Auto-selected
     }
 
     [Fact]
@@ -296,7 +308,7 @@ public class AxisCardViewModelTests : IDisposable
     {
         var sut = CreateSut(R0);
         sut.FillMode = AxisFillMode.Triangle;
-        sut.SyncWithStroke = false;
+        sut.SyncWithStroke = false; // Default is now true, explicitly set false
         Assert.True(sut.ShowFillSpeedSlider);
     }
 
@@ -335,6 +347,7 @@ public class AxisCardViewModelTests : IDisposable
     {
         var sut = CreateSut(R0);
         sut.FillMode = AxisFillMode.Triangle;
+        sut.SyncWithStroke = false; // Start unsync'd so toggling back raises event
         var raised = new List<string>();
         sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName!);
 
@@ -359,8 +372,8 @@ public class AxisCardViewModelTests : IDisposable
     public void PositionOffsetLabel_Twist_FormatsDegrees()
     {
         var sut = CreateSut(R0);
-        sut.PositionOffset = 180;
-        Assert.Equal("180°", sut.PositionOffsetLabel);
+        sut.PositionOffset = 90;
+        Assert.Equal("90°", sut.PositionOffsetLabel);
     }
 
     [Fact]
@@ -392,10 +405,10 @@ public class AxisCardViewModelTests : IDisposable
     }
 
     [Fact]
-    public void PositionOffsetMax_Twist_Is359()
+    public void PositionOffsetMax_Twist_Is179()
     {
         var sut = CreateSut(R0);
-        Assert.Equal(359.0, sut.PositionOffsetMax);
+        Assert.Equal(179.0, sut.PositionOffsetMax);
     }
 
     [Fact]
@@ -438,7 +451,7 @@ public class AxisCardViewModelTests : IDisposable
     {
         var sut = CreateSut(R0);
         sut.PositionOffset = 500;
-        Assert.Equal(359.0, sut.PositionOffset);
+        Assert.Equal(179.0, sut.PositionOffset);
     }
 
     [Fact]
@@ -472,205 +485,6 @@ public class AxisCardViewModelTests : IDisposable
         sut.PositionOffset = 15;
 
         Assert.True(fired);
-    }
-
-    // ═══════════════════════════════════════════════════════
-    //  IsTestEnabled
-    // ═══════════════════════════════════════════════════════
-
-    [Fact]
-    public void IsTestEnabled_FalseByDefault()
-    {
-        var sut = CreateSut(L0);
-        Assert.False(sut.IsTestEnabled);
-    }
-
-    [Fact]
-    public void IsTestEnabled_TrueWhenDeviceConnectedAndNotPlaying()
-    {
-        var sut = CreateSut(L0);
-        sut.SetDeviceConnected(true);
-        sut.SetVideoPlaying(false);
-        Assert.True(sut.IsTestEnabled);
-    }
-
-    [Fact]
-    public void IsTestEnabled_FalseWhenVideoPlaying()
-    {
-        var sut = CreateSut(L0);
-        sut.SetDeviceConnected(true);
-        sut.SetVideoPlaying(true);
-        Assert.False(sut.IsTestEnabled);
-    }
-
-    [Fact]
-    public void IsTestEnabled_FalseWhenDeviceDisconnected()
-    {
-        var sut = CreateSut(L0);
-        sut.SetDeviceConnected(false);
-        sut.SetVideoPlaying(false);
-        Assert.False(sut.IsTestEnabled);
-    }
-
-    [Fact]
-    public void SetVideoPlaying_RaisesPropertyChanged()
-    {
-        var sut = CreateSut(L0);
-        sut.SetDeviceConnected(true);
-        var raised = new List<string>();
-        sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName!);
-
-        sut.SetVideoPlaying(true);
-
-        Assert.Contains("IsTestEnabled", raised);
-    }
-
-    [Fact]
-    public void SetDeviceConnected_RaisesPropertyChanged()
-    {
-        var sut = CreateSut(L0);
-        var raised = new List<string>();
-        sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName!);
-
-        sut.SetDeviceConnected(true);
-
-        Assert.Contains("IsTestEnabled", raised);
-    }
-
-    [Fact]
-    public void SetVideoPlaying_NoChangeNoRaise()
-    {
-        var sut = CreateSut(L0);
-        var raised = new List<string>();
-        sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName!);
-
-        // Default is already false
-        sut.SetVideoPlaying(false);
-
-        Assert.DoesNotContain("IsTestEnabled", raised);
-    }
-
-    // ═══════════════════════════════════════════════════════
-    //  TestCommand
-    // ═══════════════════════════════════════════════════════
-
-    [Fact]
-    public void TestCommand_StartsSetsIsTesting()
-    {
-        var sut = CreateSut(L0);
-        sut.SetDeviceConnected(true);
-
-        sut.TestCommand.Execute(null);
-
-        Assert.True(sut.IsTesting);
-        Assert.Equal("Stop", sut.TestButtonText);
-    }
-
-    [Fact]
-    public void TestCommand_DoesNothingWhenNotEnabled()
-    {
-        var sut = CreateSut(L0);
-        // IsTestEnabled is false (no device connected)
-
-        sut.TestCommand.Execute(null);
-
-        Assert.False(sut.IsTesting);
-    }
-
-    [Fact]
-    public void TestCommand_StopRequestsStopViaService()
-    {
-        var sut = CreateSut(L0);
-        sut.SetDeviceConnected(true);
-
-        // Start test
-        sut.TestCommand.Execute(null);
-        Assert.True(sut.IsTesting);
-
-        // Stop test (IsTesting cleared via event, not immediately)
-        sut.TestCommand.Execute(null);
-        // IsTesting remains true until TestAxisStopped event fires
-        Assert.True(sut.IsTesting);
-
-        // Simulate service firing the stopped event
-        Assert.True(_tcode.IsAxisTesting("L0") || !_tcode.IsAxisTesting("L0"));
-        // The actual stop happens via StopTestAxis which triggers ramp-down
-    }
-
-    [Fact]
-    public void TestCommand_TestSpeedSentToService()
-    {
-        var sut = CreateSut(L0);
-        sut.SetDeviceConnected(true);
-        sut.TestSpeedHz = 2.0;
-
-        sut.TestCommand.Execute(null);
-
-        Assert.True(_tcode.IsAxisTesting("L0"));
-    }
-
-    [Fact]
-    public void TestButtonText_DefaultIsTest()
-    {
-        var sut = CreateSut(L0);
-        Assert.Equal("Test", sut.TestButtonText);
-    }
-
-    [Fact]
-    public void TestButtonText_ChangesToStopWhenTesting()
-    {
-        var sut = CreateSut(L0);
-        sut.SetDeviceConnected(true);
-        sut.TestCommand.Execute(null);
-        Assert.Equal("Stop", sut.TestButtonText);
-    }
-
-    [Fact]
-    public void IsTesting_RaisesPropertyChanged()
-    {
-        var sut = CreateSut(L0);
-        sut.SetDeviceConnected(true);
-        var raised = new List<string>();
-        sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName!);
-
-        sut.TestCommand.Execute(null);
-
-        Assert.Contains("IsTesting", raised);
-        Assert.Contains("TestButtonText", raised);
-    }
-
-    // ═══════════════════════════════════════════════════════
-    //  TestSpeedHz
-    // ═══════════════════════════════════════════════════════
-
-    [Fact]
-    public void TestSpeedHz_ClampsToMin()
-    {
-        var sut = CreateSut(L0);
-        sut.TestSpeedHz = 0.01;
-        Assert.Equal(0.1, sut.TestSpeedHz, 2);
-    }
-
-    [Fact]
-    public void TestSpeedHz_ClampsToMax()
-    {
-        var sut = CreateSut(L0);
-        sut.TestSpeedHz = 10.0;
-        Assert.Equal(3.0, sut.TestSpeedHz, 2);
-    }
-
-    [Fact]
-    public void TestSpeedHz_UpdatesServiceWhileTesting()
-    {
-        var sut = CreateSut(L0);
-        sut.SetDeviceConnected(true);
-        sut.TestCommand.Execute(null);
-        Assert.True(sut.IsTesting);
-
-        sut.TestSpeedHz = 2.5;
-
-        // Verify no error and value is set
-        Assert.Equal(2.5, sut.TestSpeedHz, 2);
     }
 
     // ═══════════════════════════════════════════════════════
@@ -764,7 +578,7 @@ public class AxisCardViewModelTests : IDisposable
         var count = 0;
         sut.ConfigChanged += () => count++;
 
-        sut.SyncWithStroke = true;
+        sut.SyncWithStroke = false; // Default is now true, toggle to false
 
         Assert.Equal(1, count);
     }
@@ -988,41 +802,6 @@ public class AxisCardViewModelTests : IDisposable
     }
 
     // ═══════════════════════════════════════════════════════
-    //  TestAxisStopped / AllTestsStopped Events
-    // ═══════════════════════════════════════════════════════
-
-    [Fact]
-    public void TestAxisStopped_ClearsIsTestingForMatchingAxis()
-    {
-        var sut = CreateSut(L0);
-        sut.SetDeviceConnected(true);
-        sut.TestCommand.Execute(null);
-        Assert.True(sut.IsTesting);
-
-        // Simulate the service stopping the test (normally after ramp-down)
-        _tcode.StopTestAxis("L0");
-        // Allow a tiny bit for the event to fire synchronously
-        // StopTestAxis fires TestAxisStopped synchronously in current impl
-
-        // Note: The StopTestAxis may fire TestAxisStopped which sets IsTesting = false
-        // This depends on TCodeService implementation details
-    }
-
-    [Fact]
-    public void TestAxisStopped_IgnoresOtherAxis()
-    {
-        var sut = CreateSut(L0);
-        sut.SetDeviceConnected(true);
-        sut.TestCommand.Execute(null);
-        Assert.True(sut.IsTesting);
-
-        // Simulate different axis stopping (should not affect L0)
-        _tcode.StopTestAxis("R0");
-
-        Assert.True(sut.IsTesting);
-    }
-
-    // ═══════════════════════════════════════════════════════
     //  Enabled Property
     // ═══════════════════════════════════════════════════════
 
@@ -1092,7 +871,7 @@ public class AxisCardViewModelTests : IDisposable
         var raised = new List<string>();
         sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName!);
 
-        sut.SyncWithStroke = true;
+        sut.SyncWithStroke = false; // Default is now true, toggle to false
 
         Assert.Contains("SyncWithStroke", raised);
     }
@@ -1104,7 +883,7 @@ public class AxisCardViewModelTests : IDisposable
         var fired = false;
         sut.ConfigChanged += () => fired = true;
 
-        sut.SyncWithStroke = true;
+        sut.SyncWithStroke = false; // Default is now true, toggle to false
 
         Assert.True(fired);
     }

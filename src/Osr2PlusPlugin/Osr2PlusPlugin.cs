@@ -19,15 +19,12 @@ public class Osr2PlusPlugin : IVidoPlugin
     // Services
     private FunscriptParser? _parser;
     private FunscriptMatcher? _matcher;
-    private FunscriptLoadingService? _scriptLoader;
     private TCodeService? _tcode;
     private InterpolationService? _interpolation;
-    // private ITransportService? _transport;
 
     // ViewModels
     private SidebarViewModel? _sidebarVm;
-    // private AxisControlViewModel? _axisControlVm;
-    // private VisualizerViewModel? _visualizerVm;
+    private AxisControlViewModel? _axisControlVm;
 
     // Event subscriptions
     private readonly List<IDisposable> _subscriptions = new();
@@ -39,14 +36,40 @@ public class Osr2PlusPlugin : IVidoPlugin
         // ── Create Services ──────────────────────────────────
         _parser = new FunscriptParser();
         _matcher = new FunscriptMatcher();
-        _scriptLoader = new FunscriptLoadingService(_parser, _matcher);
         _interpolation = new InterpolationService();
         _tcode = new TCodeService(_interpolation);
 
         // ── Create ViewModels ────────────────────────────────
         _sidebarVm = new SidebarViewModel(_tcode, context.Settings);
-        // _axisControlVm = new AxisControlViewModel(_tcode, _parser, _matcher, context.Settings);
-        // _visualizerVm = new VisualizerViewModel(context.Settings);
+        _axisControlVm = new AxisControlViewModel(_tcode, context.Settings, _parser, _matcher);
+
+        // Wire sidebar button to show/expand right panel
+        _sidebarVm.ShowAxisSettingsRequested += () =>
+        {
+            context.RequestShowRightPanel("osr2-axis-control");
+            context.Settings.Set("lastRightPanel", "osr2-axis-control");
+        };
+
+        // Wire device connection state to axis control
+        _sidebarVm.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(SidebarViewModel.IsConnected))
+                _axisControlVm.SetDeviceConnected(_sidebarVm.IsConnected);
+        };
+
+        // Wire file dialog factory for manual script loading
+        foreach (var card in _axisControlVm.AxisCards)
+        {
+            card.FileDialogFactory = () =>
+            {
+                var dialog = new Microsoft.Win32.OpenFileDialog
+                {
+                    Filter = "Funscript Files (*.funscript)|*.funscript|All Files (*.*)|*.*",
+                    Title = $"Open Funscript for {card.AxisName} ({card.AxisId})"
+                };
+                return dialog.ShowDialog() == true ? dialog.FileName : null;
+            };
+        }
 
         // ── Subscribe to Events ──────────────────────────────
         _subscriptions.Add(context.Events.Subscribe<VideoLoadedEvent>(OnVideoLoaded));
@@ -56,10 +79,7 @@ public class Osr2PlusPlugin : IVidoPlugin
 
         // ── Register UI Contributions ────────────────────────
         context.RegisterSidebarPanel("osr2-sidebar", () => new SidebarView { DataContext = _sidebarVm });
-        // context.RegisterRightPanel("osr2-axis-control", () => new AxisControlView { DataContext = _axisControlVm });
-        // context.RegisterBottomPanel("osr2-visualizer", () => new VisualizerView { DataContext = _visualizerVm });
-        // context.RegisterStatusBarItem("osr2-status", () => new StatusBarView { DataContext = _sidebarVm });
-        // context.RegisterToolbarButtonHandler("osr2-quick-connect", OnQuickConnectClicked);
+        context.RegisterRightPanel("osr2-axis-control", () => new AxisControlView { DataContext = _axisControlVm });
 
         context.RegisterFileIcons(new Dictionary<string, string>
         {
@@ -68,6 +88,11 @@ public class Osr2PlusPlugin : IVidoPlugin
 
         // ── Load Saved Settings ──────────────────────────────
         LoadSettings();
+
+        // ── Restore Right Panel ──────────────────────────────
+        var lastPanel = context.Settings.Get("lastRightPanel", "");
+        if (!string.IsNullOrEmpty(lastPanel))
+            context.RequestShowRightPanel(lastPanel);
 
         context.Logger.Info("OSR2+ Plugin activated", "OSR2+");
     }
@@ -78,7 +103,6 @@ public class Osr2PlusPlugin : IVidoPlugin
         _subscriptions.Clear();
 
         _tcode?.Dispose();
-        // _transport?.Dispose();
 
         _context?.Logger.Info("OSR2+ Plugin deactivated", "OSR2+");
     }
@@ -89,56 +113,43 @@ public class Osr2PlusPlugin : IVidoPlugin
     {
         _context?.Logger.Debug($"Video loaded: {e.FilePath}", "OSR2+");
 
-        if (_scriptLoader is null || _context is null) return;
+        if (_axisControlVm is null || _context is null) return;
 
-        var logs = _scriptLoader.LoadScriptsForVideo(e.FilePath);
-        foreach (var log in logs)
-        {
-            _context.Logger.Info(log, "OSR2+");
-        }
-
-        // TODO (VOSR-014): Update TCodeService with loaded scripts
-        // TODO (VOSR-020+): Update AxisCardViewModels with script info
-        // TODO (VOSR-032+): Update VisualizerViewModel with script data
+        _axisControlVm.LoadScriptsForVideo(e.FilePath);
+        _context.Logger.Info($"Scripts loaded for: {e.FilePath}", "OSR2+");
     }
 
     private void OnVideoUnloaded(VideoUnloadedEvent e)
     {
         _context?.Logger.Debug("Video unloaded", "OSR2+");
 
-        if (_scriptLoader is null || _context is null) return;
+        if (_axisControlVm is null || _tcode is null) return;
 
-        var logs = _scriptLoader.ClearScripts();
-        foreach (var log in logs)
-        {
-            _context.Logger.Info(log, "OSR2+");
-        }
-
-        // TODO (VOSR-014): Reset TCodeService
-        // TODO (VOSR-020+): Reset AxisCardViewModels
-        // TODO (VOSR-032+): Reset VisualizerViewModel
+        _axisControlVm.ClearScripts();
+        _tcode.SetPlaying(false);
+        _axisControlVm.SetVideoPlaying(false);
     }
 
     private void OnPlaybackStateChanged(PlaybackStateChangedEvent e)
     {
         _context?.Logger.Debug($"Playback state: {e.State}", "OSR2+");
-        // TODO (VOSR-005): Start/stop TCode output thread
+
+        if (_tcode is null || _axisControlVm is null) return;
+
+        var isPlaying = e.State == Vido.Core.Playback.PlaybackState.Playing;
+        _tcode.SetPlaying(isPlaying);
+        _axisControlVm.SetVideoPlaying(isPlaying);
     }
 
     private void OnPositionChanged(PlaybackPositionChangedEvent e)
     {
-        // TODO (VOSR-005): Update interpolation position
-        // TODO (VOSR-025): Update visualizer position
+        _tcode?.SetTime(e.Position.TotalMilliseconds);
     }
 
     // ── Settings ─────────────────────────────────────────────
 
     private void LoadSettings()
     {
-        if (_context is null) return;
-
-        // SidebarViewModel loads its own settings (connection mode, port, baud, rate, offset)
-        // Future VMs will also load their own settings
-        _context.Logger.Debug("Settings loaded via ViewModels", "OSR2+");
+        // Each ViewModel loads its own settings from the IPluginSettingsStore
     }
 }

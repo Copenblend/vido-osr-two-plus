@@ -18,11 +18,15 @@ public class HexToLowOpacityBrushConverter : IValueConverter
             {
                 var color = (Color)ColorConverter.ConvertFromString(hex);
                 color.A = 51; // 20% of 255
-                return new SolidColorBrush(color);
+                var brush = new SolidColorBrush(color);
+                brush.Freeze();
+                return brush;
             }
             catch { }
         }
-        return new SolidColorBrush(Color.FromArgb(51, 128, 128, 128));
+        var fallback = new SolidColorBrush(Color.FromArgb(51, 128, 128, 128));
+        fallback.Freeze();
+        return fallback;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

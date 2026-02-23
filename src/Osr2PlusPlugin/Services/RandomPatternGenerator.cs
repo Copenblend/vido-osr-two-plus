@@ -57,6 +57,17 @@ public class RandomPatternGenerator
         }
 
         var elapsed = progress - _transitionStart;
+
+        // Guard: if progress jumped backward (e.g. test restarted with fresh
+        // CumulativeProgress while generator kept old _transitionStart),
+        // reinitialize from current position.
+        if (elapsed < 0)
+        {
+            _transitionStart = progress;
+            _transitionDuration = 1; // Force new target on next check
+            elapsed = 0;
+        }
+
         if (elapsed >= _transitionDuration)
         {
             GenerateNewTarget(progress);
@@ -80,7 +91,20 @@ public class RandomPatternGenerator
     private void GenerateNewTarget(double progress)
     {
         _startPosition = _targetPosition;
-        _targetPosition = _min + _rng.NextDouble() * (_max - _min);
+
+        // Ensure minimum meaningful distance (at least 20% of range) to prevent
+        // the axis from appearing stuck with tiny near-invisible movements.
+        var range = _max - _min;
+        var minDistance = range * 0.20;
+        double candidate;
+        int attempts = 0;
+        do
+        {
+            candidate = _min + _rng.NextDouble() * range;
+            attempts++;
+        } while (Math.Abs(candidate - _startPosition) < minDistance && attempts < 10);
+
+        _targetPosition = candidate;
 
         // Transition duration scales with target distance for natural feel.
         // Min duration = distance so random axis never moves faster than stroke.

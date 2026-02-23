@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Windows.Input;
 using Osr2PlusPlugin.Models;
 using Osr2PlusPlugin.Services;
 using Vido.Core.Plugin;
@@ -18,9 +19,36 @@ public class AxisControlViewModel : INotifyPropertyChanged
     private readonly FunscriptParser _parser;
     private readonly FunscriptMatcher _matcher;
     private readonly List<AxisConfig> _configs;
+    private bool _isVideoPlaying;
+    private bool _isDeviceConnected;
+    private bool _isTesting;
 
     /// <summary>The four axis cards: L0, R0, R1, R2.</summary>
     public ObservableCollection<AxisCardViewModel> AxisCards { get; }
+
+    /// <summary>Whether test mode is currently active.</summary>
+    public bool IsTesting
+    {
+        get => _isTesting;
+        private set
+        {
+            if (_isTesting != value)
+            {
+                _isTesting = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(TestButtonText));
+            }
+        }
+    }
+
+    /// <summary>Test button display text.</summary>
+    public string TestButtonText => IsTesting ? "Stop" : "Test";
+
+    /// <summary>Whether the test button is enabled.</summary>
+    public bool IsTestEnabled => _isDeviceConnected && !_isVideoPlaying;
+
+    /// <summary>Toggles test mode for all configured axes.</summary>
+    public ICommand TestCommand { get; }
 
     /// <summary>
     /// Injectable delegates for testing. Defaults use real implementations.
@@ -44,6 +72,10 @@ public class AxisControlViewModel : INotifyPropertyChanged
         FindMatchingScriptsFunc = _matcher.FindMatchingScripts;
         TryParseMultiAxisFunc = _parser.TryParseMultiAxis;
         ParseFileFunc = _parser.ParseFile;
+
+        // Test command
+        TestCommand = new RelayCommand(ExecuteTest);
+        _tcode.AllTestsStopped += OnAllTestsStopped;
 
         // Create axis configs from defaults, then load persisted settings
         _configs = AxisConfig.CreateDefaults();
@@ -180,22 +212,31 @@ public class AxisControlViewModel : INotifyPropertyChanged
     //  State Updates (called by plugin entry point)
     // ═══════════════════════════════════════════════════════
 
-    /// <summary>Updates video playing state for all cards (disables test buttons).</summary>
+    /// <summary>Updates video playing state. Disables test, stops test axes when playing.</summary>
     public void SetVideoPlaying(bool playing)
     {
-        foreach (var card in AxisCards)
-            card.SetVideoPlaying(playing);
+        if (_isVideoPlaying != playing)
+        {
+            _isVideoPlaying = playing;
+            OnPropertyChanged(nameof(IsTestEnabled));
+        }
 
         // Stop all test axes when video starts playing
         if (playing)
+        {
             _tcode.StopAllTestAxes();
+            IsTesting = false;
+        }
     }
 
-    /// <summary>Updates device connection state for all cards.</summary>
+    /// <summary>Updates device connection state.</summary>
     public void SetDeviceConnected(bool connected)
     {
-        foreach (var card in AxisCards)
-            card.SetDeviceConnected(connected);
+        if (_isDeviceConnected != connected)
+        {
+            _isDeviceConnected = connected;
+            OnPropertyChanged(nameof(IsTestEnabled));
+        }
     }
 
     // ═══════════════════════════════════════════════════════
@@ -254,6 +295,49 @@ public class AxisControlViewModel : INotifyPropertyChanged
     }
 
     // ═══════════════════════════════════════════════════════
+    //  Test Mode
+    // ═══════════════════════════════════════════════════════
+
+    private void ExecuteTest()
+    {
+        if (IsTesting)
+        {
+            _tcode.StopAllTestAxes();
+            IsTesting = false;
+        }
+        else
+        {
+            if (!IsTestEnabled) return;
+
+            // Start test on each enabled axis that is testable
+            foreach (var config in _configs)
+            {
+                if (!config.Enabled) continue;
+
+                // L0 always gets Triangle at its FillSpeedHz (default 1.0)
+                if (config.IsStroke)
+                {
+                    _tcode.StartTestAxis(config.Id, config.FillSpeedHz);
+                    continue;
+                }
+
+                // Non-stroke axes: only test if fill mode is set
+                if (config.FillMode != AxisFillMode.None)
+                {
+                    _tcode.StartTestAxis(config.Id, config.FillSpeedHz);
+                }
+            }
+
+            IsTesting = true;
+        }
+    }
+
+    private void OnAllTestsStopped()
+    {
+        IsTesting = false;
+    }
+
+    // ═══════════════════════════════════════════════════════
     //  INotifyPropertyChanged
     // ═══════════════════════════════════════════════════════
 
@@ -261,4 +345,18 @@ public class AxisControlViewModel : INotifyPropertyChanged
 
     protected void OnPropertyChanged([CallerMemberName] string? name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+    // ═══════════════════════════════════════════════════════
+    //  Minimal ICommand
+    // ═══════════════════════════════════════════════════════
+
+    private class RelayCommand : ICommand
+    {
+        private readonly Action _execute;
+        public RelayCommand(Action execute) => _execute = execute;
+        public event EventHandler? CanExecuteChanged;
+        public bool CanExecute(object? parameter) => true;
+        public void Execute(object? parameter) => _execute();
+        internal void SuppressWarning() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+    }
 }

@@ -16,11 +16,15 @@ public class HexToBrushConverter : IValueConverter
             try
             {
                 var color = (Color)ColorConverter.ConvertFromString(hex);
-                return new SolidColorBrush(color);
+                var brush = new SolidColorBrush(color);
+                brush.Freeze();
+                return brush;
             }
             catch { }
         }
-        return new SolidColorBrush(Colors.Gray);
+        var fallback = new SolidColorBrush(Colors.Gray);
+        fallback.Freeze();
+        return fallback;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)

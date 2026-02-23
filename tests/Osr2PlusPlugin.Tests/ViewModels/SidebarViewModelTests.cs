@@ -299,17 +299,6 @@ public class SidebarViewModelTests : IDisposable
         Assert.True(fired);
     }
 
-    [Fact]
-    public void ShowVisualizerCommand_RaisesEvent()
-    {
-        bool fired = false;
-        _sut.ShowVisualizerRequested += () => fired = true;
-
-        _sut.ShowVisualizerCommand.Execute(null);
-
-        Assert.True(fired);
-    }
-
     // ===== Property Change Notifications =====
 
     [Theory]
@@ -348,6 +337,32 @@ public class SidebarViewModelTests : IDisposable
 
         Assert.Contains("IsConnected", changed);
         Assert.Contains("ConnectButtonText", changed);
+        Assert.Contains("IsNotConnected", changed);
+    }
+
+    // ===== IsNotConnected =====
+
+    [Fact]
+    public void IsNotConnected_TrueWhenDisconnected()
+    {
+        Assert.True(_sut.IsNotConnected);
+    }
+
+    [Fact]
+    public void IsNotConnected_FalseWhenConnected()
+    {
+        _sut.Connect();
+        Assert.False(_sut.IsNotConnected);
+    }
+
+    [Fact]
+    public void IsNotConnected_RestoresAfterDisconnect()
+    {
+        _sut.Connect();
+        Assert.False(_sut.IsNotConnected);
+
+        _sut.Disconnect();
+        Assert.True(_sut.IsNotConnected);
     }
 
     // ===== ConnectButtonText =====

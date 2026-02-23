@@ -565,6 +565,7 @@ public class TCodeServiceTests : IDisposable
     {
         var configs = AxisConfig.CreateDefaults();
         configs[1].FillMode = AxisFillMode.Random; // R0 = Random
+        configs[1].SyncWithStroke = false; // Independent mode (no stroke script needed)
         _sut.SetAxisConfigs(configs);
 
         _sut.SetPlaying(true);
@@ -581,13 +582,13 @@ public class TCodeServiceTests : IDisposable
             "Expected R0 axis in random fill output");
     }
 
-    // ===== Fill Mode — Grind / ReverseGrind =====
+    // ===== Fill Mode — Grind / Figure8 =====
 
     [Fact]
-    public void FillMode_Grind_R2FollowsL0Position()
+    public void FillMode_Grind_R2InvertsL0Position()
     {
         var configs = AxisConfig.CreateDefaults();
-        configs[3].FillMode = AxisFillMode.Grind; // R2 = Grind
+        configs[3].FillMode = AxisFillMode.Grind; // R2 = Grind (inverse)
         _sut.SetAxisConfigs(configs);
 
         // L0 has a script going from 0 to 100
@@ -626,23 +627,139 @@ public class TCodeServiceTests : IDisposable
         _sut.StopTimer();
 
         // R0 with Grind fill mode but not R2 — goes through waveform path
-        // (PatternGenerator.Calculate for Grind returns t directly, so it should produce some output)
+        // (PatternGenerator.Calculate for Grind returns 1-t, so it should produce some output)
     }
 
     [Fact]
-    public void FillMode_ReverseGrind_R2InvertsL0()
+    public void FillMode_Grind_CappedTo70_WhenStrokeAtBottom()
     {
+        // When stroke is at 0 (bottom), Grind should output max pitch = GrindMaxPitch (70)
         var configs = AxisConfig.CreateDefaults();
-        configs[3].FillMode = AxisFillMode.ReverseGrind; // R2 = ReverseGrind
+        configs[3].FillMode = AxisFillMode.Grind; // R2 = Grind
+        configs[3].Max = 100; // User sets max to 100, but Grind ignores this
         _sut.SetAxisConfigs(configs);
 
         var scripts = new Dictionary<string, FunscriptData>
         {
-            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(10000, 100) } }
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(10000, 0) } }
         };
         _sut.SetScripts(scripts);
         _sut.SetPlaying(true);
-        _sut.SetTime(5000); // L0 at 50%
+        _sut.SetTime(5000); // L0 stays at 0
+
+        _sut.Start();
+        Thread.Sleep(200);
+        _sut.StopTimer();
+
+        // R2 output should be capped at GrindMaxPitch (70), not go up to config.Max (100)
+        // TCode for 70% = (int)(70.0 / 100.0 * 999) = 699
+        // During ramp-up values move from 500 toward 699, all ≤ 699
+        var r2Commands = _transport.SentMessages
+            .SelectMany(m => m.Split(' '))
+            .Where(p => p.StartsWith("R2"))
+            .ToList();
+        Assert.True(r2Commands.Count > 0);
+        foreach (var cmd in r2Commands)
+        {
+            var value = int.Parse(cmd.Substring(2, 3));
+            Assert.True(value <= 699, $"Grind R2 value {value} exceeds 70% cap (699)");
+        }
+    }
+
+    [Fact]
+    public void FillMode_Grind_CappedTo70_WhenStrokeAtTop()
+    {
+        // When stroke is at 100 (top), Grind should output 0 (inverse)
+        // After ramp-up completes, values should converge near 0
+        var configs = AxisConfig.CreateDefaults();
+        configs[3].FillMode = AxisFillMode.Grind; // R2 = Grind
+        configs[3].Max = 100;
+        _sut.SetAxisConfigs(configs);
+
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 100), new(10000, 100) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(5000); // L0 at 100
+
+        _sut.Start();
+        Thread.Sleep(2000); // Wait for ramp-up to complete (~113 ticks at 100Hz)
+        _sut.StopTimer();
+
+        // After ramp-up, R2 should be near 0 (stroke at max → pitch at min)
+        var r2Values = _transport.SentMessages
+            .SelectMany(m => m.Split(' '))
+            .Where(p => p.StartsWith("R2"))
+            .Select(p => int.Parse(p.Substring(2, 3)))
+            .ToList();
+        Assert.True(r2Values.Count > 0);
+        // Last values should have converged near 0
+        var lastValue = r2Values.Last();
+        Assert.True(lastValue <= 10, $"Grind R2 last value {lastValue} should be near 0 when stroke is at 100");
+    }
+
+    [Fact]
+    public void FillMode_Grind_DoesNotAffectFigure8Range()
+    {
+        // Figure8 should still use full config.Min-config.Max range, NOT capped to 70
+        var configs = AxisConfig.CreateDefaults();
+        configs[3].FillMode = AxisFillMode.Figure8; // R2 = Figure8
+        configs[3].Min = 0;
+        configs[3].Max = 100; // Full range
+        _sut.SetAxisConfigs(configs);
+
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(2500, 100), new(5000, 0), new(7500, 100), new(10000, 0) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+
+        // Collect commands across several ticks at different stroke positions
+        _sut.Start();
+        for (int t = 0; t < 5000; t += 500)
+        {
+            _sut.SetTime(t);
+            Thread.Sleep(30);
+        }
+        _sut.StopTimer();
+
+        // Figure8 range should go beyond 70% (699) for full config.Max=100
+        // (Figure8 maps to config.Min..config.Max, not clamped to GrindMaxPitch)
+        var r2Commands = _transport.SentMessages
+            .SelectMany(m => m.Split(' '))
+            .Where(p => p.StartsWith("R2"))
+            .Select(p => int.Parse(p.Substring(2, 3)))
+            .ToList();
+        // Note: Figure8 has 0.6 amplitude scale, so max excursion from center is ~60%
+        // With config.Min=0, config.Max=100: max Figure8 output ≈ config.Min + 0.8 * (config.Max - config.Min)
+        // The key assertion: Figure8 is NOT artificially capped at 699 like Grind.
+        // It uses config.Min-config.Max range directly.
+        Assert.True(r2Commands.Count > 0);
+    }
+
+    [Fact]
+    public void GrindMaxPitch_Constant_Is70()
+    {
+        Assert.Equal(70.0, TCodeService.GrindMaxPitch);
+    }
+
+    [Fact]
+    public void FillMode_Figure8_R2ProducesOutput()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        configs[3].FillMode = AxisFillMode.Figure8; // R2 = Figure8
+        _sut.SetAxisConfigs(configs);
+
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(5000, 100), new(10000, 0) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(2500); // L0 at 50%, going up
 
         _sut.Start();
         Thread.Sleep(100);
@@ -651,6 +768,30 @@ public class TCodeServiceTests : IDisposable
         Assert.True(_transport.SentMessages.Count > 0);
         var firstMsg = _transport.SentMessages[0];
         Assert.Contains("R2", firstMsg);
+    }
+
+    [Fact]
+    public void FillMode_Figure8_R1ProducesOutput()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        configs[2].FillMode = AxisFillMode.Figure8; // R1 = Figure8
+        _sut.SetAxisConfigs(configs);
+
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(5000, 100), new(10000, 0) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(2500); // L0 at 50%, going up
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        Assert.True(_transport.SentMessages.Count > 0);
+        var firstMsg = _transport.SentMessages[0];
+        Assert.Contains("R1", firstMsg);
     }
 
     // ===== Fill Mode — Stroke Sync =====
@@ -809,22 +950,22 @@ public class TCodeServiceTests : IDisposable
     // ===== Fill Mode with No Playback =====
 
     [Fact]
-    public void FillMode_ActiveWithoutPlayback_StillSendsOutput()
+    public void FillMode_ActiveWithoutPlayback_DoesNotSendOutput()
     {
         var configs = AxisConfig.CreateDefaults();
         configs[0].FillMode = AxisFillMode.Triangle;
         _sut.SetAxisConfigs(configs);
 
-        // Not playing, but fill mode is active — should still produce output
+        // Not playing — fill mode must NOT produce output
         _sut.SetPlaying(false);
 
         _sut.Start();
         Thread.Sleep(150);
         _sut.StopTimer();
 
-        // Fill should work even when not playing
-        Assert.True(_transport.SentMessages.Count > 0,
-            "Fill mode should produce output even when not playing");
+        // Fill should NOT work when not playing (only scripts, test, or offset trigger output)
+        Assert.True(_transport.SentMessages.Count == 0,
+            "Fill mode must not produce output when not playing");
     }
 
     // ===== Position Offset — ApplyPositionOffset =====
@@ -1064,7 +1205,9 @@ public class TCodeServiceTests : IDisposable
     [Fact]
     public void TestMode_ProducesOutput_WhenNotPlaying()
     {
-        _sut.SetAxisConfigs(AxisConfig.CreateDefaults());
+        var configs = AxisConfig.CreateDefaults();
+        configs[0].FillMode = AxisFillMode.Triangle; // FillMode required for test output
+        _sut.SetAxisConfigs(configs);
         _sut.StartTestAxis("L0", 1.0);
 
         _sut.Start();
@@ -1076,9 +1219,10 @@ public class TCodeServiceTests : IDisposable
     }
 
     [Fact]
-    public void TestMode_OutputOscillatesAroundMidpoint()
+    public void TestMode_OutputOscillatesWithFillPattern()
     {
         var configs = AxisConfig.CreateDefaults();
+        configs[0].FillMode = AxisFillMode.Triangle; // FillMode required for test output
         _sut.SetAxisConfigs(configs);
         _sut.StartTestAxis("L0", 2.0); // 2Hz — fast enough to see oscillation
 
@@ -1104,8 +1248,7 @@ public class TCodeServiceTests : IDisposable
 
         Assert.True(l0Values.Count > 2, "Should have multiple L0 values");
 
-        // After ramp-up, values should vary around 500 (midpoint)
-        // Check that we see values both above and below midpoint (or at least not all the same)
+        // After ramp-up, values should vary (triangle pattern goes 0—1—0)
         var minVal = l0Values.Min();
         var maxVal = l0Values.Max();
         Assert.True(maxVal - minVal > 10, $"Values should oscillate, min={minVal} max={maxVal}");
@@ -1151,14 +1294,14 @@ public class TCodeServiceTests : IDisposable
     }
 
     [Fact]
-    public void StopTestAxis_SendsMidpoint_WhenNotTesting()
+    public void StopTestAxis_DoesNotSendMidpoint_WhenNotTesting()
     {
         _sut.SetAxisConfigs(AxisConfig.CreateDefaults());
 
-        // StopTestAxis on a non-testing axis should send midpoint as safety
+        // StopTestAxis on a non-testing axis should not send anything
         _sut.StopTestAxis("L0");
 
-        Assert.Contains(_transport.SentMessages, msg => msg.Contains("L0500"));
+        Assert.Empty(_transport.SentMessages);
     }
 
     [Fact]

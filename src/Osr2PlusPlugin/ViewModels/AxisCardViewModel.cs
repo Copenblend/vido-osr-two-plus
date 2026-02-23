@@ -15,8 +15,6 @@ public class AxisCardViewModel : INotifyPropertyChanged
 {
     private readonly AxisConfig _config;
     private readonly TCodeService _tcode;
-    private bool _isVideoPlaying;
-    private bool _isDeviceConnected;
 
     /// <summary>
     /// Factory delegate for opening a file dialog. Returns the selected file path or null.
@@ -116,7 +114,14 @@ public class AxisCardViewModel : INotifyPropertyChanged
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(ShowSyncToggle));
                 OnPropertyChanged(nameof(ShowFillSpeedSlider));
+                OnPropertyChanged(nameof(IsSyncEditable));
                 RaiseConfigChanged();
+
+                // Auto-select SyncWithStroke for Grind/Figure8 (must stay synced)
+                if (value is AxisFillMode.Grind or AxisFillMode.Figure8 && !SyncWithStroke)
+                {
+                    SyncWithStroke = true;
+                }
             }
         }
     }
@@ -170,38 +175,9 @@ public class AxisCardViewModel : INotifyPropertyChanged
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(PositionOffsetLabel));
                 RaiseConfigChanged();
-            }
-        }
-    }
 
-    /// <summary>Test speed in Hz (0.1–3.0).</summary>
-    public double TestSpeedHz
-    {
-        get => _config.TestSpeedHz;
-        set
-        {
-            var clamped = Math.Clamp(value, 0.1, 3.0);
-            if (Math.Abs(_config.TestSpeedHz - clamped) > 0.001)
-            {
-                _config.TestSpeedHz = clamped;
-                OnPropertyChanged();
-                if (_config.IsTesting)
-                    _tcode.UpdateTestSpeed(AxisId, clamped);
-            }
-        }
-    }
-
-    /// <summary>Whether this axis is currently in test mode.</summary>
-    public bool IsTesting
-    {
-        get => _config.IsTesting;
-        private set
-        {
-            if (_config.IsTesting != value)
-            {
-                _config.IsTesting = value;
-                OnPropertyChanged();
-                OnPropertyChanged(nameof(TestButtonText));
+                // Send immediate position update to the device
+                _tcode.SendPositionWithOffset(AxisId);
             }
         }
     }
@@ -231,8 +207,13 @@ public class AxisCardViewModel : INotifyPropertyChanged
     public AxisFillMode[] AvailableFillModes => _config.AvailableFillModes;
 
     /// <summary>Whether the SyncWithStroke toggle should be visible.</summary>
-    public bool ShowSyncToggle => _config.Id != "L0"
-        && _config.FillMode is not (AxisFillMode.None or AxisFillMode.Grind or AxisFillMode.ReverseGrind);
+    public bool ShowSyncToggle => !IsStroke;
+
+    /// <summary>Whether the fill mode section should be visible (not shown for L0/Stroke).</summary>
+    public bool ShowFillMode => !IsStroke;
+
+    /// <summary>Whether the SyncWithStroke checkbox is editable (disabled for Grind/Figure8).</summary>
+    public bool IsSyncEditable => _config.FillMode is not (AxisFillMode.Grind or AxisFillMode.Figure8);
 
     /// <summary>Whether the position offset section should be visible (L0 and R0 only).</summary>
     public bool ShowPositionOffset => _config.HasPositionOffset;
@@ -256,17 +237,11 @@ public class AxisCardViewModel : INotifyPropertyChanged
     /// <summary>Minimum position offset. L0: -50, R0: 0.</summary>
     public double PositionOffsetMin => _config.Id == "L0" ? -50.0 : 0.0;
 
-    /// <summary>Maximum position offset. L0: +50, R0: 359.</summary>
-    public double PositionOffsetMax => _config.Id == "L0" ? 50.0 : 359.0;
+    /// <summary>Maximum position offset. L0: +50, R0: 179.</summary>
+    public double PositionOffsetMax => _config.Id == "L0" ? 50.0 : 179.0;
 
     /// <summary>Default position offset. L0: 0, R0: 0.</summary>
     public double PositionOffsetDefault => 0.0;
-
-    /// <summary>Test button display text.</summary>
-    public string TestButtonText => IsTesting ? "Stop" : "Test";
-
-    /// <summary>Whether the test button is enabled.</summary>
-    public bool IsTestEnabled => !_isVideoPlaying && _isDeviceConnected;
 
     /// <summary>Loaded funscript filename or null.</summary>
     public string? ScriptFileName
@@ -303,9 +278,6 @@ public class AxisCardViewModel : INotifyPropertyChanged
     /// <summary>Toggles the expanded/collapsed state of the card.</summary>
     public ICommand ToggleExpandCommand { get; }
 
-    /// <summary>Toggles test mode for this axis.</summary>
-    public ICommand TestCommand { get; }
-
     /// <summary>Opens a file dialog to manually load a funscript.</summary>
     public ICommand OpenScriptCommand { get; }
 
@@ -319,37 +291,12 @@ public class AxisCardViewModel : INotifyPropertyChanged
         _tcode = tcode;
 
         ToggleExpandCommand = new RelayCommand(() => IsExpanded = !IsExpanded);
-        TestCommand = new RelayCommand(ExecuteTest);
         OpenScriptCommand = new RelayCommand(ExecuteOpenScript);
-
-        // Listen for test axis stopped (ramp-down complete)
-        _tcode.TestAxisStopped += OnTestAxisStopped;
-        _tcode.AllTestsStopped += OnAllTestsStopped;
     }
 
     // ═══════════════════════════════════════════════════════
     //  State Updates (called by parent ViewModel)
     // ═══════════════════════════════════════════════════════
-
-    /// <summary>Updates the video playing state. Refreshes IsTestEnabled.</summary>
-    internal void SetVideoPlaying(bool playing)
-    {
-        if (_isVideoPlaying != playing)
-        {
-            _isVideoPlaying = playing;
-            OnPropertyChanged(nameof(IsTestEnabled));
-        }
-    }
-
-    /// <summary>Updates the device connection state. Refreshes IsTestEnabled.</summary>
-    internal void SetDeviceConnected(bool connected)
-    {
-        if (_isDeviceConnected != connected)
-        {
-            _isDeviceConnected = connected;
-            OnPropertyChanged(nameof(IsTestEnabled));
-        }
-    }
 
     /// <summary>Sets a script loaded via auto-load (does not overwrite manual assignments).</summary>
     internal void SetAutoLoadedScript(string? filePath)
@@ -380,21 +327,6 @@ public class AxisCardViewModel : INotifyPropertyChanged
     //  Command Implementations
     // ═══════════════════════════════════════════════════════
 
-    private void ExecuteTest()
-    {
-        if (IsTesting)
-        {
-            _tcode.StopTestAxis(AxisId);
-            // IsTesting will be cleared via TestAxisStopped event after ramp-down
-        }
-        else
-        {
-            if (!IsTestEnabled) return;
-            IsTesting = true;
-            _tcode.StartTestAxis(AxisId, _config.TestSpeedHz);
-        }
-    }
-
     private void ExecuteOpenScript()
     {
         var filePath = FileDialogFactory?.Invoke();
@@ -413,22 +345,6 @@ public class AxisCardViewModel : INotifyPropertyChanged
     // ═══════════════════════════════════════════════════════
     //  Event Handlers
     // ═══════════════════════════════════════════════════════
-
-    private void OnTestAxisStopped(string axisId)
-    {
-        if (axisId == AxisId)
-        {
-            IsTesting = false;
-        }
-    }
-
-    private void OnAllTestsStopped()
-    {
-        if (IsTesting)
-        {
-            IsTesting = false;
-        }
-    }
 
     private void RaiseConfigChanged() => ConfigChanged?.Invoke();
 

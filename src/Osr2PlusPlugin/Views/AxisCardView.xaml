@@ -15,6 +15,7 @@
             <converters:BoolToVisibilityConverter x:Key="BoolToVisibility" />
             <converters:HexToBrushConverter x:Key="HexToBrush" />
             <converters:HexToLowOpacityBrushConverter x:Key="HexToLowOpacityBrush" />
+            <converters:FillModeDisplayConverter x:Key="FillModeDisplay" />
         </ResourceDictionary>
     </UserControl.Resources>
 
@@ -43,6 +44,7 @@
                                       Command="{Binding ToggleExpandCommand}" />
                     </Grid.InputBindings>
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />  <!-- Chevron -->
                         <ColumnDefinition Width="Auto" />  <!-- Name -->
                         <ColumnDefinition Width="Auto" />  <!-- Axis badge -->
                         <ColumnDefinition Width="Auto" />  <!-- Range badge -->
@@ -50,8 +52,15 @@
                         <ColumnDefinition Width="Auto" />  <!-- Enable toggle -->
                     </Grid.ColumnDefinitions>
 
+                    <!-- Expand/Collapse Chevron -->
+                    <ToggleButton Grid.Column="0"
+                                  Style="{StaticResource Osr2ChevronStyle}"
+                                  IsChecked="{Binding IsExpanded}"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,8,0" />
+
                     <!-- Axis Name -->
-                    <TextBlock Grid.Column="0"
+                    <TextBlock Grid.Column="1"
                                Text="{Binding AxisName}"
                                Foreground="{StaticResource TextPrimaryBrush}"
                                FontFamily="Segoe UI" FontSize="14" FontWeight="SemiBold"
@@ -59,7 +68,7 @@
                                Margin="0,0,8,0" />
 
                     <!-- Axis Badge (e.g. L0) -->
-                    <Border Grid.Column="1"
+                    <Border Grid.Column="2"
                             Background="{Binding AxisColor, Converter={StaticResource HexToLowOpacityBrush}}"
                             CornerRadius="3"
                             Padding="6,2"
@@ -71,7 +80,7 @@
                     </Border>
 
                     <!-- Range Badge (e.g. 0-100) -->
-                    <Border Grid.Column="2"
+                    <Border Grid.Column="3"
                             Background="#2D2D2D"
                             CornerRadius="3"
                             Padding="6,2"
@@ -82,7 +91,7 @@
                     </Border>
 
                     <!-- Enable Toggle -->
-                    <CheckBox Grid.Column="4"
+                    <CheckBox Grid.Column="5"
                               Style="{StaticResource Osr2ToggleSwitchStyle}"
                               IsChecked="{Binding Enabled}"
                               VerticalAlignment="Center" />
@@ -96,8 +105,8 @@
 
                     <!-- ── 1. Range Section ──────────────────── -->
                     <TextBlock Text="Range"
-                               Foreground="{StaticResource TextSecondaryBrush}"
-                               FontFamily="Segoe UI" FontSize="11"
+                               Foreground="White"
+                               FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold"
                                Margin="0,0,0,4" />
 
                     <Grid>
@@ -122,43 +131,51 @@
                                    VerticalAlignment="Center" />
                     </Grid>
 
-                    <!-- ── 2. Fill Mode Section ──────────────── -->
-                    <TextBlock Text="Fill Mode"
-                               Foreground="{StaticResource TextSecondaryBrush}"
-                               FontFamily="Segoe UI" FontSize="11"
-                               Margin="0,10,0,4" />
+                    <!-- ── 2. Fill Mode Section (not shown for Stroke) ── -->
+                    <StackPanel Visibility="{Binding ShowFillMode, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="Fill Mode"
+                                   Foreground="White"
+                                   FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold"
+                                   Margin="0,10,0,4" />
 
-                    <ComboBox Style="{StaticResource Osr2ComboBoxStyle}"
-                              ItemContainerStyle="{StaticResource Osr2ComboBoxItemStyle}"
-                              ItemsSource="{Binding AvailableFillModes}"
-                              SelectedItem="{Binding FillMode}" />
+                        <ComboBox Style="{StaticResource Osr2ComboBoxStyle}"
+                                  ItemContainerStyle="{StaticResource Osr2ComboBoxItemStyle}"
+                                  ItemsSource="{Binding AvailableFillModes}"
+                                  SelectedItem="{Binding FillMode}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Converter={StaticResource FillModeDisplay}}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
 
-                    <!-- Sync with Stroke checkbox (conditional) -->
-                    <CheckBox Style="{StaticResource Osr2CheckBoxStyle}"
-                              Content="Sync with Stroke"
-                              IsChecked="{Binding SyncWithStroke}"
-                              Visibility="{Binding ShowSyncToggle, Converter={StaticResource BoolToVisibility}}"
-                              Margin="0,6,0,0" />
+                        <!-- Sync with Stroke checkbox -->
+                        <CheckBox Style="{StaticResource Osr2CheckBoxStyle}"
+                                  Content="Sync with Stroke"
+                                  IsChecked="{Binding SyncWithStroke}"
+                                  IsEnabled="{Binding IsSyncEditable}"
+                                  Visibility="{Binding ShowSyncToggle, Converter={StaticResource BoolToVisibility}}"
+                                  Margin="0,6,0,0" />
 
-                    <!-- Fill Speed slider (conditional) -->
-                    <StackPanel Visibility="{Binding ShowFillSpeedSlider, Converter={StaticResource BoolToVisibility}}"
-                                Margin="0,6,0,0">
-                        <TextBlock Text="Speed"
-                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                   FontFamily="Segoe UI" FontSize="11"
-                                   Margin="0,0,0,4" />
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="50" />
-                            </Grid.ColumnDefinitions>
-                            <Slider Grid.Column="0"
-                                    Style="{StaticResource Osr2SliderStyle}"
-                                    Minimum="0.1" Maximum="3.0"
-                                    SmallChange="0.1" LargeChange="0.5"
-                                    Value="{Binding FillSpeedHz}"
-                                    VerticalAlignment="Center" />
-                            <TextBlock Grid.Column="1"
+                        <!-- Fill Speed slider (conditional) -->
+                        <StackPanel Visibility="{Binding ShowFillSpeedSlider, Converter={StaticResource BoolToVisibility}}"
+                                    Margin="0,6,0,0">
+                            <TextBlock Text="Speed"
+                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                       FontFamily="Segoe UI" FontSize="11"
+                                       Margin="0,0,0,4" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="50" />
+                                </Grid.ColumnDefinitions>
+                                <Slider Grid.Column="0"
+                                        Style="{StaticResource Osr2SliderStyle}"
+                                        Minimum="0.1" Maximum="3.0"
+                                        SmallChange="0.1" LargeChange="0.5"
+                                        Value="{Binding FillSpeedHz}"
+                                        VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1"
                                        Foreground="{StaticResource TextSecondaryBrush}"
                                        FontFamily="Segoe UI" FontSize="11"
                                        HorizontalAlignment="Right"
@@ -169,11 +186,12 @@
                             </TextBlock>
                         </Grid>
                     </StackPanel>
+                    </StackPanel>
 
                     <!-- ── 3. Script Section ─────────────────── -->
                     <TextBlock Text="Script"
-                               Foreground="{StaticResource TextSecondaryBrush}"
-                               FontFamily="Segoe UI" FontSize="11"
+                               Foreground="White"
+                               FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold"
                                Margin="0,10,0,4" />
 
                     <Grid>
@@ -198,14 +216,11 @@
                                 VerticalAlignment="Center" />
                     </Grid>
 
-                    <!-- ── 4. Divider ────────────────────────── -->
-                    <Border Style="{StaticResource DividerStyle}" />
-
-                    <!-- ── 5. Position Offset (L0 and R0 only) ─ -->
+                    <!-- ── 4. Position Offset (L0 and R0 only) ─ -->
                     <StackPanel Visibility="{Binding ShowPositionOffset, Converter={StaticResource BoolToVisibility}}">
                         <TextBlock Text="Position Offset"
-                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                   FontFamily="Segoe UI" FontSize="11"
+                                   Foreground="White"
+                                   FontFamily="Segoe UI" FontSize="12" FontWeight="SemiBold"
                                    Margin="0,0,0,4" />
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -230,55 +245,6 @@
                         <!-- Divider after offset -->
                         <Border Style="{StaticResource DividerStyle}" />
                     </StackPanel>
-
-                    <!-- ── 6. Test Section ───────────────────── -->
-                    <TextBlock Text="Test"
-                               Foreground="{StaticResource TextSecondaryBrush}"
-                               FontFamily="Segoe UI" FontSize="11"
-                               Margin="0,0,0,4" />
-
-                    <TextBlock Text="Speed"
-                               Foreground="{StaticResource TextSecondaryBrush}"
-                               FontFamily="Segoe UI" FontSize="11"
-                               Margin="0,0,0,4" />
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="50" />
-                        </Grid.ColumnDefinitions>
-                        <Slider Grid.Column="0"
-                                Style="{StaticResource Osr2SliderStyle}"
-                                Minimum="0.1" Maximum="3.0"
-                                SmallChange="0.1" LargeChange="0.5"
-                                Value="{Binding TestSpeedHz}"
-                                VerticalAlignment="Center" />
-                        <TextBlock Grid.Column="1"
-                                   Foreground="{StaticResource TextSecondaryBrush}"
-                                   FontFamily="Segoe UI" FontSize="11"
-                                   HorizontalAlignment="Right"
-                                   VerticalAlignment="Center">
-                            <TextBlock.Text>
-                                <Binding Path="TestSpeedHz" StringFormat="{}{0:0.0} Hz" />
-                            </TextBlock.Text>
-                        </TextBlock>
-                    </Grid>
-
-                    <!-- Test/Stop Button -->
-                    <Button Content="{Binding TestButtonText}"
-                            Command="{Binding TestCommand}"
-                            IsEnabled="{Binding IsTestEnabled}"
-                            ToolTipService.ShowOnDisabled="True"
-                            Margin="0,6,0,0">
-                        <Button.Style>
-                            <Style TargetType="Button" BasedOn="{StaticResource Osr2TestButtonStyle}">
-                                <Style.Triggers>
-                                    <Trigger Property="IsEnabled" Value="False">
-                                        <Setter Property="ToolTip" Value="Cannot test while video is playing or device disconnected" />
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
 
                 </StackPanel>
             </StackPanel>
