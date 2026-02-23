@@ -26,6 +26,12 @@ public class AxisControlViewModel : INotifyPropertyChanged
     /// <summary>The four axis cards: L0, R0, R1, R2.</summary>
     public ObservableCollection<AxisCardViewModel> AxisCards { get; }
 
+    /// <summary>
+    /// Raised when loaded scripts change (load, clear, or manual override).
+    /// Carries the current set of loaded scripts.
+    /// </summary>
+    public event Action<Dictionary<string, FunscriptData>>? ScriptsChanged;
+
     /// <summary>Whether test mode is currently active.</summary>
     public bool IsTesting
     {
@@ -167,6 +173,7 @@ public class AxisControlViewModel : INotifyPropertyChanged
 
         // Push all loaded scripts to TCodeService
         _tcode.SetScripts(loadedScripts);
+        ScriptsChanged?.Invoke(loadedScripts);
     }
 
     /// <summary>
@@ -195,6 +202,7 @@ public class AxisControlViewModel : INotifyPropertyChanged
         }
 
         _tcode.SetScripts(remaining);
+        ScriptsChanged?.Invoke(remaining);
     }
 
     /// <summary>
@@ -205,7 +213,9 @@ public class AxisControlViewModel : INotifyPropertyChanged
         foreach (var card in AxisCards)
             card.ClearAllScripts();
 
-        _tcode.SetScripts(new Dictionary<string, FunscriptData>());
+        var empty = new Dictionary<string, FunscriptData>();
+        _tcode.SetScripts(empty);
+        ScriptsChanged?.Invoke(empty);
     }
 
     // ═══════════════════════════════════════════════════════
