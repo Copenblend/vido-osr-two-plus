@@ -221,6 +221,91 @@ public class VisualizerViewModelTests
         Assert.Contains(nameof(VisualizerViewModel.TimeWindowRadius), raised);
     }
 
+    [Fact]
+    public void WindowDurationSeconds_Changed_RaisesWindowDurationIndexChanged()
+    {
+        var raised = new List<string>();
+        _sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName!);
+
+        _sut.WindowDurationSeconds = 120;
+
+        Assert.Contains(nameof(VisualizerViewModel.WindowDurationIndex), raised);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  WindowDurationIndex Property
+    // ═══════════════════════════════════════════════════════
+
+    [Theory]
+    [InlineData(30, 0)]
+    [InlineData(60, 1)]
+    [InlineData(120, 2)]
+    [InlineData(300, 3)]
+    public void WindowDurationIndex_ReflectsWindowDurationSeconds(int duration, int expectedIndex)
+    {
+        _sut.WindowDurationSeconds = duration;
+
+        Assert.Equal(expectedIndex, _sut.WindowDurationIndex);
+    }
+
+    [Fact]
+    public void WindowDurationIndex_DefaultIs1()
+    {
+        // Default WindowDurationSeconds is 60 → index 1
+        Assert.Equal(1, _sut.WindowDurationIndex);
+    }
+
+    [Theory]
+    [InlineData(0, 30)]
+    [InlineData(1, 60)]
+    [InlineData(2, 120)]
+    [InlineData(3, 300)]
+    public void WindowDurationIndex_Setter_UpdatesWindowDurationSeconds(int index, int expectedDuration)
+    {
+        _sut.WindowDurationIndex = index;
+
+        Assert.Equal(expectedDuration, _sut.WindowDurationSeconds);
+    }
+
+    [Fact]
+    public void WindowDurationIndex_Setter_PersistsToSettings()
+    {
+        _sut.WindowDurationIndex = 2; // 120s
+
+        _mockSettings.Verify(s => s.Set("visualizerWindowDuration", "120"), Times.Once);
+    }
+
+    [Fact]
+    public void WindowDurationIndex_NegativeValue_IsIgnored()
+    {
+        _sut.WindowDurationSeconds = 120;
+
+        _sut.WindowDurationIndex = -1;
+
+        Assert.Equal(120, _sut.WindowDurationSeconds);
+    }
+
+    [Fact]
+    public void WindowDurationIndex_OutOfRange_IsIgnored()
+    {
+        _sut.WindowDurationSeconds = 120;
+
+        _sut.WindowDurationIndex = 99;
+
+        Assert.Equal(120, _sut.WindowDurationSeconds);
+    }
+
+    [Fact]
+    public void WindowDurationIndex_RoundTrip_AllValues()
+    {
+        for (int i = 0; i < VisualizerViewModel.AvailableWindowDurations.Length; i++)
+        {
+            _sut.WindowDurationIndex = i;
+            Assert.Equal(i, _sut.WindowDurationIndex);
+            Assert.Equal(VisualizerViewModel.AvailableWindowDurations[i], _sut.WindowDurationSeconds);
+        }
+    }
+
     // ═══════════════════════════════════════════════════════
     //  TimeWindowRadius
     // ═══════════════════════════════════════════════════════
@@ -504,8 +589,9 @@ public class VisualizerViewModelTests
         _sut.SelectedMode = VisualizationMode.Heatmap;
         Assert.Equal(VisualizationMode.Heatmap, _sut.SelectedMode);
 
-        // Change window duration
-        _sut.WindowDurationSeconds = 120;
+        // Change window duration via index (as ComboBox would)
+        _sut.WindowDurationIndex = 2; // 120s
+        Assert.Equal(120, _sut.WindowDurationSeconds);
         Assert.Equal(60.0, _sut.TimeWindowRadius);
 
         // Video unloaded

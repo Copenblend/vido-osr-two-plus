@@ -81,6 +81,7 @@ public class VisualizerViewModel : INotifyPropertyChanged
             if (Set(ref _windowDurationSeconds, value))
             {
                 OnPropertyChanged(nameof(TimeWindowRadius));
+                OnPropertyChanged(nameof(WindowDurationIndex));
                 _settings.Set("visualizerWindowDuration", value.ToString());
             }
         }
@@ -117,6 +118,20 @@ public class VisualizerViewModel : INotifyPropertyChanged
     /// Half the window duration — defines the visible range around <see cref="CurrentTime"/>.
     /// </summary>
     public double TimeWindowRadius => _windowDurationSeconds / 2.0;
+
+    /// <summary>
+    /// Index into <see cref="AvailableWindowDurations"/> for ComboBox binding.
+    /// Setting this updates <see cref="WindowDurationSeconds"/>.
+    /// </summary>
+    public int WindowDurationIndex
+    {
+        get => Array.IndexOf(AvailableWindowDurations, _windowDurationSeconds) is var i and >= 0 ? i : 0;
+        set
+        {
+            if (value >= 0 && value < AvailableWindowDurations.Length)
+                WindowDurationSeconds = AvailableWindowDurations[value];
+        }
+    }
 
     /// <summary>
     /// Raised to request the visualizer view to repaint (e.g. on time or data changes).
