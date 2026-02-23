@@ -157,6 +157,48 @@ public class AxisControlViewModelTests : IDisposable
     }
 
     [Fact]
+    public void ConfigChanged_SavesMinMaxForAllAxes()
+    {
+        var sut = CreateSut();
+
+        // Change min/max on each axis
+        sut.AxisCards[0].Min = 5;   // L0
+        sut.AxisCards[1].Max = 80;  // R0
+        sut.AxisCards[2].Min = 10;  // R1
+        sut.AxisCards[3].Max = 60;  // R2
+
+        _mockSettings.Verify(s => s.Set("axis_L0_min", 5), Times.AtLeastOnce);
+        _mockSettings.Verify(s => s.Set("axis_R0_max", 80), Times.AtLeastOnce);
+        _mockSettings.Verify(s => s.Set("axis_R1_min", 10), Times.AtLeastOnce);
+        _mockSettings.Verify(s => s.Set("axis_R2_max", 60), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public void Constructor_LoadsPersistedMinMaxForAllAxes()
+    {
+        // Set up persisted values for all four axes
+        _mockSettings.Setup(s => s.Get("axis_L0_min", 0)).Returns(5);
+        _mockSettings.Setup(s => s.Get("axis_L0_max", 100)).Returns(95);
+        _mockSettings.Setup(s => s.Get("axis_R0_min", 0)).Returns(10);
+        _mockSettings.Setup(s => s.Get("axis_R0_max", 100)).Returns(90);
+        _mockSettings.Setup(s => s.Get("axis_R1_min", 0)).Returns(15);
+        _mockSettings.Setup(s => s.Get("axis_R1_max", 100)).Returns(85);
+        _mockSettings.Setup(s => s.Get("axis_R2_min", 0)).Returns(20);
+        _mockSettings.Setup(s => s.Get("axis_R2_max", 75)).Returns(60);
+
+        var sut = CreateSut();
+
+        Assert.Equal(5, sut.AxisCards[0].Min);   // L0
+        Assert.Equal(95, sut.AxisCards[0].Max);
+        Assert.Equal(10, sut.AxisCards[1].Min);  // R0
+        Assert.Equal(90, sut.AxisCards[1].Max);
+        Assert.Equal(15, sut.AxisCards[2].Min);  // R1
+        Assert.Equal(85, sut.AxisCards[2].Max);
+        Assert.Equal(20, sut.AxisCards[3].Min);  // R2
+        Assert.Equal(60, sut.AxisCards[3].Max);
+    }
+
+    [Fact]
     public void ConfigChanged_SavesAllAxes()
     {
         var sut = CreateSut();
@@ -385,18 +427,17 @@ public class AxisControlViewModelTests : IDisposable
     // ═══════════════════════════════════════════════════════
 
     [Fact]
-    public void SetVideoPlaying_PropagatesAllCards()
+    public void SetVideoPlaying_UpdatesIsTestEnabled()
     {
         var sut = CreateSut();
         sut.SetDeviceConnected(true);
-
-        // All cards should initially be test-enabled
-        Assert.All(sut.AxisCards, c => Assert.True(c.IsTestEnabled));
+        Assert.True(sut.IsTestEnabled);
 
         sut.SetVideoPlaying(true);
+        Assert.False(sut.IsTestEnabled);
 
-        // All cards should now be test-disabled
-        Assert.All(sut.AxisCards, c => Assert.False(c.IsTestEnabled));
+        sut.SetVideoPlaying(false);
+        Assert.True(sut.IsTestEnabled);
     }
 
     [Fact]
@@ -405,25 +446,173 @@ public class AxisControlViewModelTests : IDisposable
         var sut = CreateSut();
         sut.SetDeviceConnected(true);
 
-        // Start a test on L0
-        sut.AxisCards[0].TestCommand.Execute(null);
-        Assert.True(sut.AxisCards[0].IsTesting);
+        // Start test
+        sut.TestCommand.Execute(null);
+        Assert.True(sut.IsTesting);
 
         sut.SetVideoPlaying(true);
 
-        // StopAllTestAxes was called — IsTesting may be cleared by AllTestsStopped event
+        // StopAllTestAxes was called — IsTesting cleared
+        Assert.False(sut.IsTesting);
     }
 
     [Fact]
-    public void SetDeviceConnected_PropagatesAllCards()
+    public void SetDeviceConnected_UpdatesIsTestEnabled()
     {
         var sut = CreateSut();
 
         sut.SetDeviceConnected(true);
-        Assert.All(sut.AxisCards, c => Assert.True(c.IsTestEnabled));
+        Assert.True(sut.IsTestEnabled);
 
         sut.SetDeviceConnected(false);
-        Assert.All(sut.AxisCards, c => Assert.False(c.IsTestEnabled));
+        Assert.False(sut.IsTestEnabled);
+    }
+
+    [Fact]
+    public void SetVideoPlaying_RaisesPropertyChanged()
+    {
+        var sut = CreateSut();
+        var raised = new List<string>();
+        sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName!);
+
+        sut.SetVideoPlaying(true);
+
+        Assert.Contains("IsTestEnabled", raised);
+    }
+
+    [Fact]
+    public void SetDeviceConnected_RaisesPropertyChanged()
+    {
+        var sut = CreateSut();
+        var raised = new List<string>();
+        sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName!);
+
+        sut.SetDeviceConnected(true);
+
+        Assert.Contains("IsTestEnabled", raised);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  TestCommand — Panel-Level Test
+    // ═══════════════════════════════════════════════════════
+
+    [Fact]
+    public void TestCommand_StartsAllTestableAxes()
+    {
+        var sut = CreateSut();
+        sut.SetDeviceConnected(true);
+
+        // Set fill modes on non-stroke axes
+        sut.AxisCards[1].FillMode = AxisFillMode.Triangle; // R0
+        sut.AxisCards[2].FillMode = AxisFillMode.Sine;     // R1
+
+        sut.TestCommand.Execute(null);
+
+        Assert.True(sut.IsTesting);
+        Assert.Equal("Stop", sut.TestButtonText);
+        Assert.True(_tcode.IsAxisTesting("L0")); // L0 always tested
+        Assert.True(_tcode.IsAxisTesting("R0")); // Has fill mode
+        Assert.True(_tcode.IsAxisTesting("R1")); // Has fill mode
+        Assert.False(_tcode.IsAxisTesting("R2")); // FillMode.None → skipped
+    }
+
+    [Fact]
+    public void TestCommand_StopsAllAxes()
+    {
+        var sut = CreateSut();
+        sut.SetDeviceConnected(true);
+        sut.AxisCards[1].FillMode = AxisFillMode.Triangle;
+
+        sut.TestCommand.Execute(null);
+        Assert.True(sut.IsTesting);
+
+        sut.TestCommand.Execute(null);
+        Assert.False(sut.IsTesting);
+        Assert.False(_tcode.IsAxisTesting("L0"));
+        Assert.False(_tcode.IsAxisTesting("R0"));
+    }
+
+    [Fact]
+    public void TestCommand_DoesNothingWhenNotEnabled()
+    {
+        var sut = CreateSut();
+        // Device not connected → IsTestEnabled is false
+
+        sut.TestCommand.Execute(null);
+
+        Assert.False(sut.IsTesting);
+        Assert.False(_tcode.IsAxisTesting("L0"));
+    }
+
+    [Fact]
+    public void TestButtonText_DefaultIsTest()
+    {
+        var sut = CreateSut();
+        Assert.Equal("Test", sut.TestButtonText);
+    }
+
+    [Fact]
+    public void TestButtonText_ChangesToStopWhenTesting()
+    {
+        var sut = CreateSut();
+        sut.SetDeviceConnected(true);
+        sut.TestCommand.Execute(null);
+        Assert.Equal("Stop", sut.TestButtonText);
+    }
+
+    [Fact]
+    public void IsTesting_RaisesPropertyChanged()
+    {
+        var sut = CreateSut();
+        sut.SetDeviceConnected(true);
+        var raised = new List<string>();
+        sut.PropertyChanged += (_, e) => raised.Add(e.PropertyName!);
+
+        sut.TestCommand.Execute(null);
+
+        Assert.Contains("IsTesting", raised);
+        Assert.Contains("TestButtonText", raised);
+    }
+
+    [Fact]
+    public void TestCommand_L0AlwaysUsesDefaultSpeed()
+    {
+        var sut = CreateSut();
+        sut.SetDeviceConnected(true);
+
+        sut.TestCommand.Execute(null);
+
+        // L0 should be testing (uses default FillSpeedHz = 1.0)
+        Assert.True(_tcode.IsAxisTesting("L0"));
+    }
+
+    [Fact]
+    public void TestCommand_SkipsDisabledAxes()
+    {
+        var sut = CreateSut();
+        sut.SetDeviceConnected(true);
+        sut.AxisCards[0].Enabled = false; // Disable L0
+        sut.AxisCards[1].FillMode = AxisFillMode.Triangle; // R0 has fill
+
+        sut.TestCommand.Execute(null);
+
+        Assert.True(sut.IsTesting);
+        Assert.False(_tcode.IsAxisTesting("L0")); // Disabled
+        Assert.True(_tcode.IsAxisTesting("R0"));  // Enabled + fill mode
+    }
+
+    [Fact]
+    public void AllTestsStopped_ClearsIsTesting()
+    {
+        var sut = CreateSut();
+        sut.SetDeviceConnected(true);
+        sut.TestCommand.Execute(null);
+        Assert.True(sut.IsTesting);
+
+        // Simulate external stop (e.g., playback starts)
+        _tcode.StopAllTestAxes();
+
+        Assert.False(sut.IsTesting);
     }
 
     // ═══════════════════════════════════════════════════════

@@ -74,11 +74,6 @@ public class SidebarViewModel : INotifyPropertyChanged
     /// </summary>
     public event Action? ShowAxisSettingsRequested;
 
-    /// <summary>
-    /// Raised when the user requests the visualizer panel to be shown.
-    /// </summary>
-    public event Action? ShowVisualizerRequested;
-
     // ===== Properties =====
 
     /// <summary>Selected connection mode (UDP or Serial).</summary>
@@ -143,9 +138,15 @@ public class SidebarViewModel : INotifyPropertyChanged
         private set
         {
             if (Set(ref _isConnected, value))
+            {
                 OnPropertyChanged(nameof(ConnectButtonText));
+                OnPropertyChanged(nameof(IsNotConnected));
+            }
         }
     }
+
+    /// <summary>True when not connected — used to disable connection settings while connected.</summary>
+    public bool IsNotConnected => !_isConnected;
 
     /// <summary>Dynamic text for the connect/disconnect button.</summary>
     public string ConnectButtonText => _isConnected ? "Disconnect" : "Connect";
@@ -191,9 +192,6 @@ public class SidebarViewModel : INotifyPropertyChanged
     /// <summary>Requests the axis settings panel to be shown.</summary>
     public ICommand ShowAxisSettingsCommand { get; }
 
-    /// <summary>Requests the visualizer panel to be shown.</summary>
-    public ICommand ShowVisualizerCommand { get; }
-
     // ===== Constructor =====
 
     public SidebarViewModel(TCodeService tcode, IPluginSettingsStore settings)
@@ -208,7 +206,6 @@ public class SidebarViewModel : INotifyPropertyChanged
         ConnectCommand = new RelayCommand(ExecuteConnect);
         RefreshPortsCommand = new RelayCommand(ExecuteRefreshPorts);
         ShowAxisSettingsCommand = new RelayCommand(() => ShowAxisSettingsRequested?.Invoke());
-        ShowVisualizerCommand = new RelayCommand(() => ShowVisualizerRequested?.Invoke());
 
         // Load persisted settings
         LoadSettings();

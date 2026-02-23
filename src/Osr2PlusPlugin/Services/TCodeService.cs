@@ -22,7 +22,7 @@ public class TCodeService : IDisposable
     // Playback state (written by UI thread, read by output thread)
     private volatile bool _isPlaying;
     private volatile float _playbackSpeed = 1.0f;
-    private int _outputRateHz = 100;
+    private volatile int _outputRateHz = 100;
 
     // Time extrapolation: the UI thread periodically sets the "sync point".
     // The output thread uses Stopwatch to extrapolate actual time between sync points.
@@ -41,12 +41,16 @@ public class TCodeService : IDisposable
 
     // ===== Fill Mode State =====
 
+    /// <summary>Maximum pitch position for Grind mode (safety cap to prevent device damage).</summary>
+    internal const double GrindMaxPitch = 70.0;
+
     // Random pattern generators — one per axis
     private readonly Dictionary<string, RandomPatternGenerator> _randomGenerators = new();
 
-    // Stroke tracking for grind/random synchronization
+    // Stroke tracking for grind/figure8/random synchronization
     private double _lastStrokePosition = 50.0;
     private double _cumulativeStrokeDistance;
+    private double _smoothStrokeDirection; // -1..+1, smoothed for Figure8 Lissajous
 
     // Per-axis cumulative fill time (for independent pattern fill)
     private readonly Dictionary<string, double> _cumulativeFillTime = new();
@@ -106,6 +110,7 @@ public class TCodeService : IDisposable
         _interpolation.ResetIndices();
         // Reset stroke tracking and random generators on script change
         _cumulativeStrokeDistance = 0;
+        _smoothStrokeDirection = 0.0;
         _lastStrokePosition = 50.0;
         _cumulativeFillTime.Clear();
         foreach (var gen in _randomGenerators.Values) gen.Reset();
@@ -267,25 +272,29 @@ public class TCodeService : IDisposable
                 LastTickAt = Stopwatch.GetTimestamp()
             };
         }
+
+        // Reset cached random generator so it doesn't have stale _transitionStart
+        if (_randomGenerators.TryGetValue(axisId, out var gen))
+            gen.Reset();
     }
 
     /// <summary>
-    /// Begin smooth stop of test oscillation on the given axis.
+    /// Stop test oscillation on the given axis immediately.
     /// </summary>
     public void StopTestAxis(string axisId)
     {
+        bool wasRemoved;
         lock (_testLock)
         {
-            if (_testingAxes.TryGetValue(axisId, out var state))
-            {
-                state.TargetAmplitude = 0; // Ramp down; removed in tick when amplitude < 0.5
-            }
-            else
-            {
-                // Not currently testing — send midpoint as safety
-                SendMidpoint(axisId);
-            }
+            wasRemoved = _testingAxes.Remove(axisId);
         }
+
+        if (wasRemoved)
+        {
+            SendMidpoint(axisId);
+        }
+
+        TestAxisStopped?.Invoke(axisId);
     }
 
     /// <summary>
@@ -438,7 +447,6 @@ public class TCodeService : IDisposable
         intervalMs = Math.Max(1, intervalMs);
 
         var parts = new List<string>();
-        var finishedTestAxes = new List<string>();
 
         // === First pass: compute L0 stroke position for grind/random sync ===
         double strokePosition = 50.0;
@@ -449,8 +457,14 @@ public class TCodeService : IDisposable
             strokePosition = _interpolation.GetPosition(strokeScript, currentTimeMs, "L0");
             hasStrokeScript = true;
         }
+        // Track stroke direction for Figure8 — exponentially smoothed velocity
+        var strokeDelta = strokePosition - _lastStrokePosition;
+        // Scale velocity to -1..+1 range (2 units/tick at 100Hz → ±1.0)
+        var rawDirection = Math.Clamp(strokeDelta * 0.5, -1.0, 1.0);
+        _smoothStrokeDirection += (rawDirection - _smoothStrokeDirection) * 0.15;
+
         // Accumulate stroke travel distance for random/sync fill speed
-        _cumulativeStrokeDistance += Math.Abs(strokePosition - _lastStrokePosition);
+        _cumulativeStrokeDistance += Math.Abs(strokeDelta);
         _lastStrokePosition = strokePosition;
 
         // === Per-axis loop ===
@@ -463,7 +477,7 @@ public class TCodeService : IDisposable
                 continue;
             }
 
-            // === Test mode: cosine oscillation with smooth ramp-up/down ===
+            // === Test mode: uses selected fill mode pattern with smooth ramp-up ===
             TestAxisState? testState = null;
             if (hasTestAxes)
             {
@@ -472,33 +486,94 @@ public class TCodeService : IDisposable
 
             if (testState != null)
             {
+                // L0 always uses simple triangle (up/down) for test mode
+                // Other axes require a fill mode selection
+                if (config.Id != "L0" && config.FillMode == AxisFillMode.None)
+                {
+                    continue;
+                }
+
                 var now = Stopwatch.GetTimestamp();
                 var testDeltaSec = Math.Min(
                     (now - testState.LastTickAt) / (double)Stopwatch.Frequency, 0.1);
                 testState.LastTickAt = now;
 
-                // Smooth speed transition (exponential smoothing, factor 0.03)
-                testState.CurrentSpeedHz += (testState.TargetSpeedHz - testState.CurrentSpeedHz) * 0.03;
+                // Time-independent exponential smoothing for speed transition (~3.0/s convergence rate)
+                var speedSmoothing = 1.0 - Math.Exp(-3.0 * testDeltaSec);
+                testState.CurrentSpeedHz += (testState.TargetSpeedHz - testState.CurrentSpeedHz) * speedSmoothing;
 
-                // Smooth amplitude ramp (exponential smoothing, factor 0.02)
-                testState.CurrentAmplitude += (testState.TargetAmplitude - testState.CurrentAmplitude) * 0.02;
-
-                // Check if finished ramping down
-                if (testState.TargetAmplitude == 0 && testState.CurrentAmplitude < 0.5)
-                {
-                    finishedTestAxes.Add(config.Id);
-                    var midVal = PositionToTCode(config, 50.0);
-                    parts.Add(FormatTCodeCommand(config, midVal, intervalMs));
-                    _lastSentValues[config.Id] = midVal;
-                    continue;
-                }
+                // Time-independent amplitude ramp-up (~5.0/s convergence rate)
+                var ampSmoothing = 1.0 - Math.Exp(-5.0 * testDeltaSec);
+                testState.CurrentAmplitude += (testState.TargetAmplitude - testState.CurrentAmplitude) * ampSmoothing;
 
                 // Advance phase (cumulative — no jumps on speed change)
-                testState.Phase += testState.CurrentSpeedHz * testDeltaSec;
+                // Scale by output rate ratio so higher rates = faster test motion
+                var rateMultiplier = _outputRateHz / 100.0;
+                testState.Phase += testState.CurrentSpeedHz * rateMultiplier * testDeltaSec;
                 testState.Phase %= 1.0;
 
-                // Cosine waveform: smooth direction reversals
-                var testPosition = 50.0 + testState.CurrentAmplitude * Math.Cos(testState.Phase * 2.0 * Math.PI);
+                // Use the selected fill mode pattern (L0 always uses Triangle)
+                var effectiveFillMode = config.Id == "L0" ? AxisFillMode.Triangle : config.FillMode;
+                double patternInput = testState.Phase;
+
+                double position;
+                if (effectiveFillMode == AxisFillMode.Grind)
+                {
+                    // Grind in test mode: simulate stroke with triangle wave, cap output to 0-GrindMaxPitch
+                    var simulatedStroke = PatternGenerator.Calculate(AxisFillMode.Triangle, testState.Phase);
+                    var grindPos = (1.0 - simulatedStroke) * GrindMaxPitch;
+
+                    // Blend with Grind midpoint for ramp-up
+                    var grindBlend = Math.Clamp(testState.CurrentAmplitude / 50.0, 0.0, 1.0);
+                    var grindMidpoint = GrindMaxPitch / 2.0;
+                    grindPos = grindMidpoint + (grindPos - grindMidpoint) * grindBlend;
+
+                    var grindTcode = (int)(grindPos / 100.0 * 999);
+                    grindTcode = Math.Clamp(grindTcode, 0, 999);
+                    grindTcode = ApplyPositionOffset(config, grindTcode);
+
+                    if (IsDirty(config.Id, grindTcode))
+                    {
+                        parts.Add(FormatTCodeCommand(config, grindTcode, intervalMs));
+                        _lastSentValues[config.Id] = grindTcode;
+                    }
+                    continue;
+                }
+                else if (effectiveFillMode == AxisFillMode.Figure8)
+                {
+                    // Figure-8 in test mode: simulate stroke with triangle wave and smooth direction
+                    var simulatedStroke = PatternGenerator.Calculate(AxisFillMode.Triangle, testState.Phase);
+                    // sin(phase * 2π) gives smooth direction: +1 at mid-upstroke, -1 at mid-downstroke,
+                    // 0 at stroke extremes — perfect for smooth figure-8 loop transitions
+                    var testDirection = Math.Sin(testState.Phase * 2.0 * Math.PI);
+                    var figure8Value = PatternGenerator.CalculateFigure8(simulatedStroke, testDirection);
+                    position = figure8Value * 100.0;
+                }
+                else if (effectiveFillMode == AxisFillMode.Random)
+                {
+                    // Random uses its own cosine-interpolated generator
+                    if (!_randomGenerators.TryGetValue(config.Id, out var generator))
+                    {
+                        generator = new RandomPatternGenerator(config.Min, config.Max);
+                        _randomGenerators[config.Id] = generator;
+                    }
+                    generator.SetRange(config.Min, config.Max);
+
+                    testState.CumulativeProgress += testState.CurrentSpeedHz * rateMultiplier * testDeltaSec * 200.0;
+                    var rawPos = generator.GetPosition(testState.CumulativeProgress);
+                    // rawPos is already in min..max range — map to 0-100 for consistent blending
+                    position = rawPos;
+                }
+                else
+                {
+                    var patternValue = PatternGenerator.Calculate(effectiveFillMode, patternInput);
+                    // patternValue is 0.0–1.0, map to position 0–100
+                    position = patternValue * 100.0;
+                }
+
+                // Blend with midpoint for ramp-up
+                var blend = Math.Clamp(testState.CurrentAmplitude / 50.0, 0.0, 1.0);
+                var testPosition = 50.0 + (position - 50.0) * blend;
 
                 // Scale through axis min/max and apply offset
                 var testTcode = ApplyPositionOffset(config, PositionToTCode(config, testPosition));
@@ -525,21 +600,31 @@ public class TCodeService : IDisposable
             }
 
             // === Fill mode (no script for this axis) ===
-            if (config.FillMode == AxisFillMode.None)
+            // Fill patterns only generate output during playback
+            if (config.FillMode == AxisFillMode.None || !_isPlaying)
             {
                 ProcessReturnToCenter(config, intervalMs, parts);
                 continue;
             }
 
-            // --- Grind / ReverseGrind (R2 only) ---
-            if (config.FillMode is AxisFillMode.Grind or AxisFillMode.ReverseGrind
-                && config.Id == "R2")
+            // --- Grind (R2 only) / Figure8 (R1 + R2) ---
+            if ((config.FillMode == AxisFillMode.Grind && config.Id == "R2")
+                || (config.FillMode == AxisFillMode.Figure8 && config.Id is "R1" or "R2"))
             {
                 double grindPos;
                 if (config.FillMode == AxisFillMode.Grind)
-                    grindPos = config.Min + (strokePosition / 100.0) * (config.Max - config.Min);
-                else // ReverseGrind
-                    grindPos = config.Max - (strokePosition / 100.0) * (config.Max - config.Min);
+                {
+                    // Grind: pitch inversely follows stroke (stroke up → pitch down)
+                    // Capped to 0-GrindMaxPitch for device safety
+                    grindPos = GrindMaxPitch - (strokePosition / 100.0) * GrindMaxPitch;
+                }
+                else // Figure8
+                {
+                    // Lissajous figure-8: pitch/roll varies with stroke position and smoothed direction
+                    var normalizedStroke = strokePosition / 100.0;
+                    var figure8Value = PatternGenerator.CalculateFigure8(normalizedStroke, _smoothStrokeDirection);
+                    grindPos = config.Min + figure8Value * (config.Max - config.Min);
+                }
 
                 var grindVal = (int)(grindPos / 100.0 * 999);
                 grindVal = Math.Clamp(grindVal, 0, 999);
@@ -564,12 +649,27 @@ public class TCodeService : IDisposable
                 }
                 generator.SetRange(config.Min, config.Max);
 
-                // Use cumulative stroke distance when synced; otherwise time-based
+                // Use cumulative stroke distance when synced; otherwise time-based (Hz-normalized)
                 double progress;
-                if (config.SyncWithStroke && config.Id != "L0" && hasStrokeScript)
+                if (config.SyncWithStroke && config.Id != "L0")
+                {
+                    if (!hasStrokeScript)
+                    {
+                        ProcessReturnToCenter(config, intervalMs, parts);
+                        continue;
+                    }
                     progress = _cumulativeStrokeDistance;
+                }
                 else
-                    progress = currentTimeMs;
+                {
+                    // Normalize time to same scale as stroke distance (~200 units per cycle)
+                    // At 1 Hz fill speed, one second = 200 progress units
+                    if (!_cumulativeFillTime.TryGetValue(config.Id, out var cumTime))
+                        cumTime = 0;
+                    cumTime += config.FillSpeedHz * elapsedSec * 200.0;
+                    _cumulativeFillTime[config.Id] = cumTime;
+                    progress = cumTime;
+                }
 
                 var randomPos = generator.GetPosition(progress);
                 var targetVal = (int)(randomPos / 100.0 * 999);
@@ -587,6 +687,13 @@ public class TCodeService : IDisposable
 
             // --- Waveform fill (Triangle, Sine, Saw, etc.) ---
             {
+                // When synced to stroke, only move if stroke script is loaded
+                if (config.SyncWithStroke && config.Id != "L0" && !hasStrokeScript)
+                {
+                    ProcessReturnToCenter(config, intervalMs, parts);
+                    continue;
+                }
+
                 // Advance fill time
                 double fillTime;
                 if (config.SyncWithStroke && config.Id != "L0" && hasStrokeScript)
@@ -623,18 +730,6 @@ public class TCodeService : IDisposable
         if (parts.Count > 0)
         {
             _transport?.Send(string.Join(" ", parts) + "\n");
-        }
-
-        // Clean up finished test axes (outside the per-axis loop to avoid modifying dictionary during iteration)
-        if (finishedTestAxes.Count > 0)
-        {
-            lock (_testLock)
-            {
-                foreach (var id in finishedTestAxes)
-                    _testingAxes.Remove(id);
-            }
-            foreach (var id in finishedTestAxes)
-                TestAxisStopped?.Invoke(id);
         }
     }
 
@@ -697,13 +792,8 @@ public class TCodeService : IDisposable
     /// </summary>
     private bool HasActiveFillModes()
     {
-        if (_returningAxes.Count > 0) return true;
-        foreach (var config in _axisConfigs)
-        {
-            if (config.Enabled && config.FillMode != AxisFillMode.None)
-                return true;
-        }
-        return false;
+        return _returningAxes.Count > 0
+            || _axisConfigs.Any(c => c.Enabled && c.FillMode != AxisFillMode.None);
     }
 
     // ===== Helpers =====
@@ -776,10 +866,26 @@ public class TCodeService : IDisposable
     {
         var config = _axisConfigs.FirstOrDefault(c => c.Id == axisId);
         if (config == null || _transport?.IsConnected != true) return;
-        var prefix = config.Type == "rotation" ? "R" : "L";
-        var axisNum = config.Id[1];
-        _transport.Send($"{prefix}{axisNum}500I500\n");
+        _transport.Send(FormatTCodeCommand(config, 500, 500) + "\n");
         _lastSentValues.Remove(axisId);
+    }
+
+    /// <summary>
+    /// Sends an immediate position command for the given axis using its current offset.
+    /// Uses midpoint (50%) as the base position, applies offset, and sends over the transport.
+    /// Called when the user adjusts the position offset slider.
+    /// </summary>
+    public void SendPositionWithOffset(string axisId)
+    {
+        var config = _axisConfigs.FirstOrDefault(c => c.Id == axisId);
+        if (config == null || _transport?.IsConnected != true) return;
+
+        // Use midpoint (50% position) as the base, apply offset
+        var baseTcode = PositionToTCode(config, 50.0);
+        var offsetTcode = ApplyPositionOffset(config, baseTcode);
+
+        _transport.Send(FormatTCodeCommand(config, offsetTcode, 200) + "\n");
+        _lastSentValues[axisId] = offsetTcode;
     }
 
     // ===== Test Axis State =====
@@ -792,5 +898,6 @@ public class TCodeService : IDisposable
         public double CurrentAmplitude { get; set; }
         public double TargetAmplitude { get; set; }
         public long LastTickAt { get; set; }
+        public double CumulativeProgress { get; set; }
     }
 }

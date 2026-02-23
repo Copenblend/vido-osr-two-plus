@@ -44,10 +44,12 @@
             <ComboBox Style="{StaticResource Osr2ComboBoxStyle}"
                       ItemContainerStyle="{StaticResource Osr2ComboBoxItemStyle}"
                       ItemsSource="{Binding Source={StaticResource ConnectionModes}}"
-                      SelectedItem="{Binding SelectedMode}" />
+                      SelectedItem="{Binding SelectedMode}"
+                      IsEnabled="{Binding IsNotConnected}" />
 
             <!-- ── UDP Section ─────────────────────────────── -->
             <StackPanel Visibility="{Binding IsUdpMode, Converter={StaticResource BoolToVisibility}}"
+                        IsEnabled="{Binding IsNotConnected}"
                         Margin="0,8,0,0">
                 <TextBlock Text="Port"
                            Foreground="{StaticResource TextSecondaryBrush}"
@@ -59,6 +61,7 @@
 
             <!-- ── Serial Section ──────────────────────────── -->
             <StackPanel Visibility="{Binding IsSerialMode, Converter={StaticResource BoolToVisibility}}"
+                        IsEnabled="{Binding IsNotConnected}"
                         Margin="0,8,0,0">
                 <!-- COM Port row -->
                 <TextBlock Text="COM Port"
@@ -258,12 +261,6 @@
             <Button Style="{StaticResource Osr2ButtonStyle}"
                     Content="Show Axis Settings"
                     Command="{Binding ShowAxisSettingsCommand}"
-                    HorizontalAlignment="Stretch"
-                    Margin="0,2" />
-
-            <Button Style="{StaticResource Osr2ButtonStyle}"
-                    Content="Show Funscript Visualizer"
-                    Command="{Binding ShowVisualizerCommand}"
                     HorizontalAlignment="Stretch"
                     Margin="0,2" />
 

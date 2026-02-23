@@ -20,7 +20,7 @@ public class AxisConfig : INotifyPropertyChanged
     private int _max = 100;
     private bool _enabled = true;
     private AxisFillMode _fillMode = AxisFillMode.None;
-    private bool _syncWithStroke = false;
+    private bool _syncWithStroke = true;
     private double _fillSpeedHz = 1.0;
 
     /// <summary>Minimum amplitude (0-100). Must be strictly less than Max.</summary>
@@ -51,17 +51,9 @@ public class AxisConfig : INotifyPropertyChanged
 
     // ===== Ephemeral (NOT persisted, reset each session) =====
     private double _positionOffset = 0;          // L0: -50 to +50 (%), R0: 0-359 (degrees)
-    private bool _isTesting = false;
-    private double _testSpeedHz = 1.0;
 
     [JsonIgnore]
     public double PositionOffset { get => _positionOffset; set => Set(ref _positionOffset, value); }
-
-    [JsonIgnore]
-    public bool IsTesting { get => _isTesting; set => Set(ref _isTesting, value); }
-
-    [JsonIgnore]
-    public double TestSpeedHz { get => _testSpeedHz; set => Set(ref _testSpeedHz, Math.Clamp(value, 0.1, 3.0)); }
 
     // ===== Derived =====
     [JsonIgnore]
@@ -79,11 +71,18 @@ public class AxisConfig : INotifyPropertyChanged
     [JsonIgnore]
     public AxisFillMode[] AvailableFillModes => Id switch
     {
+        "L0" => new[] { AxisFillMode.None },
         "R2" => new[] {
             AxisFillMode.None, AxisFillMode.Random,
             AxisFillMode.Triangle, AxisFillMode.Sine, AxisFillMode.Saw,
             AxisFillMode.SawtoothReverse, AxisFillMode.Square, AxisFillMode.Pulse,
-            AxisFillMode.EaseInOut, AxisFillMode.Grind, AxisFillMode.ReverseGrind
+            AxisFillMode.EaseInOut, AxisFillMode.Grind, AxisFillMode.Figure8
+        },
+        "R1" => new[] {
+            AxisFillMode.None, AxisFillMode.Random,
+            AxisFillMode.Triangle, AxisFillMode.Sine, AxisFillMode.Saw,
+            AxisFillMode.SawtoothReverse, AxisFillMode.Square, AxisFillMode.Pulse,
+            AxisFillMode.EaseInOut, AxisFillMode.Figure8
         },
         _ => new[] {
             AxisFillMode.None, AxisFillMode.Random,
@@ -92,10 +91,6 @@ public class AxisConfig : INotifyPropertyChanged
             AxisFillMode.EaseInOut
         }
     };
-
-    /// <summary>Whether the SyncWithStroke toggle should be visible. Not shown for L0 or for Grind/ReverseGrind.</summary>
-    [JsonIgnore]
-    public bool ShowSyncToggle => Id != "L0" && FillMode is not (AxisFillMode.None or AxisFillMode.Grind or AxisFillMode.ReverseGrind);
 
     // ===== Funscript assignment (ephemeral) =====
     private string? _scriptFileName;

@@ -16,23 +16,14 @@
     <!-- ── Text Colors ────────────────────────────────────── -->
     <Color x:Key="TextPrimaryColor">#CCCCCC</Color>
     <Color x:Key="TextSecondaryColor">#808080</Color>
-    <Color x:Key="DisabledForegroundColor">#6B6B6B</Color>
+
 
     <!-- ── Accent & Status Colors ─────────────────────────── -->
     <Color x:Key="AccentColor">#007ACC</Color>
-    <Color x:Key="AccentHoverColor">#026EC1</Color>
     <Color x:Key="FocusBorderColor">#007FD4</Color>
-    <Color x:Key="ConnectedColor">#14CC00</Color>
-    <Color x:Key="DisconnectedColor">#CC3333</Color>
-
-    <!-- ── Axis Colors ────────────────────────────────────── -->
-    <Color x:Key="L0Color">#007ACC</Color>
-    <Color x:Key="R0Color">#B800CC</Color>
-    <Color x:Key="R1Color">#CC5200</Color>
-    <Color x:Key="R2Color">#14CC00</Color>
 
     <!-- ── Scrollbar Colors ───────────────────────────────── -->
-    <Color x:Key="ScrollbarThumbColor">#4a4a4a80</Color>
+    <Color x:Key="ScrollbarThumbColor">#007ACC</Color>
 
     <!-- ── Button Colors ──────────────────────────────────── -->
     <Color x:Key="ButtonBackgroundColor">#3C3C3C</Color>
@@ -53,18 +44,9 @@
 
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimaryColor}" />
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondaryColor}" />
-    <SolidColorBrush x:Key="DisabledForegroundBrush" Color="{StaticResource DisabledForegroundColor}" />
 
     <SolidColorBrush x:Key="AccentBrush" Color="{StaticResource AccentColor}" />
-    <SolidColorBrush x:Key="AccentHoverBrush" Color="{StaticResource AccentHoverColor}" />
     <SolidColorBrush x:Key="FocusBorderBrush" Color="{StaticResource FocusBorderColor}" />
-    <SolidColorBrush x:Key="ConnectedBrush" Color="{StaticResource ConnectedColor}" />
-    <SolidColorBrush x:Key="DisconnectedBrush" Color="{StaticResource DisconnectedColor}" />
-
-    <SolidColorBrush x:Key="L0Brush" Color="{StaticResource L0Color}" />
-    <SolidColorBrush x:Key="R0Brush" Color="{StaticResource R0Color}" />
-    <SolidColorBrush x:Key="R1Brush" Color="{StaticResource R1Color}" />
-    <SolidColorBrush x:Key="R2Brush" Color="{StaticResource R2Color}" />
 
     <SolidColorBrush x:Key="ButtonBackgroundBrush" Color="{StaticResource ButtonBackgroundColor}" />
     <SolidColorBrush x:Key="ButtonHoverBrush" Color="{StaticResource ButtonHoverColor}" />
@@ -186,16 +168,6 @@
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
         <Setter Property="Margin" Value="0,12,0,6" />
-    </Style>
-
-    <!-- ── Card Style ─────────────────────────────────────── -->
-    <Style x:Key="CardBorderStyle" TargetType="Border">
-        <Setter Property="Background" Value="{StaticResource CardBackgroundBrush}" />
-        <Setter Property="BorderBrush" Value="{StaticResource CardBorderBrush}" />
-        <Setter Property="BorderThickness" Value="1" />
-        <Setter Property="CornerRadius" Value="4" />
-        <Setter Property="Padding" Value="12" />
-        <Setter Property="Margin" Value="0,4" />
     </Style>
 
     <!-- ── Divider ────────────────────────────────────────── -->
@@ -354,6 +326,11 @@
                             </Border>
                         </Popup>
                     </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
@@ -473,19 +450,59 @@
         </Setter>
     </Style>
 
+    <!-- ── Expand/Collapse Chevron (matches Vido TreeExpanderStyle) ── -->
+    <Style x:Key="Osr2ChevronStyle" TargetType="ToggleButton">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Width" Value="16" />
+        <Setter Property="Height" Value="22" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border Background="Transparent" Width="16" Height="22">
+                        <Path x:Name="Arrow"
+                              Data="M 4,2 L 10,6 4,10"
+                              Stroke="{StaticResource TextSecondaryBrush}"
+                              StrokeThickness="1.2"
+                              StrokeLineJoin="Round"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"
+                              Fill="Transparent"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Center"
+                              RenderTransformOrigin="0.5,0.5">
+                            <Path.RenderTransform>
+                                <RotateTransform Angle="0" />
+                            </Path.RenderTransform>
+                        </Path>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Arrow" Property="RenderTransform">
+                                <Setter.Value>
+                                    <RotateTransform Angle="90" />
+                                </Setter.Value>
+                            </Setter>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ── Small Button (Open, etc.) ─────────────────────── -->
     <Style x:Key="Osr2SmallButtonStyle" TargetType="Button" BasedOn="{StaticResource Osr2ButtonStyle}">
         <Setter Property="FontSize" Value="11" />
         <Setter Property="Padding" Value="8,3" />
     </Style>
 
-    <!-- ── Test Button (red when active, Tag-based hover) ── -->
+    <!-- ── Test Button (accent blue default, red when testing) ── -->
     <Style x:Key="Osr2TestButtonStyle" TargetType="Button">
         <Setter Property="FontFamily" Value="Segoe UI" />
         <Setter Property="FontSize" Value="13" />
-        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
-        <Setter Property="Background" Value="{StaticResource ButtonBackgroundBrush}" />
-        <Setter Property="Tag" Value="{StaticResource ButtonHoverBrush}" />
+        <Setter Property="Foreground" Value="White" />
+        <Setter Property="Background" Value="{StaticResource ConnectButtonBrush}" />
+        <Setter Property="Tag" Value="{StaticResource ConnectButtonHoverBrush}" />
         <Setter Property="Padding" Value="12,5" />
         <Setter Property="HorizontalAlignment" Value="Left" />
         <Setter Property="Cursor" Value="Hand" />

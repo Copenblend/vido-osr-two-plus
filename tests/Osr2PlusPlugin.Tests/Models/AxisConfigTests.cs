@@ -77,19 +77,6 @@ public class AxisConfigTests
         Assert.Equal(2.0, axis.FillSpeedHz);
     }
 
-    // ── TestSpeedHz Clamping ─────────────────────────────────
-
-    [Fact]
-    public void TestSpeedHz_ClampedToRange()
-    {
-        var axis = new AxisConfig();
-        axis.TestSpeedHz = 0.01;
-        Assert.Equal(0.1, axis.TestSpeedHz);
-
-        axis.TestSpeedHz = 10.0;
-        Assert.Equal(3.0, axis.TestSpeedHz);
-    }
-
     // ── RangeLabel ───────────────────────────────────────────
 
     [Fact]
@@ -153,7 +140,7 @@ public class AxisConfigTests
     {
         var axis = new AxisConfig { Id = "R2" };
         Assert.Contains(AxisFillMode.Grind, axis.AvailableFillModes);
-        Assert.Contains(AxisFillMode.ReverseGrind, axis.AvailableFillModes);
+        Assert.Contains(AxisFillMode.Figure8, axis.AvailableFillModes);
     }
 
     [Fact]
@@ -161,13 +148,13 @@ public class AxisConfigTests
     {
         var axis = new AxisConfig { Id = "L0" };
         Assert.DoesNotContain(AxisFillMode.Grind, axis.AvailableFillModes);
-        Assert.DoesNotContain(AxisFillMode.ReverseGrind, axis.AvailableFillModes);
+        Assert.DoesNotContain(AxisFillMode.Figure8, axis.AvailableFillModes);
     }
 
     [Fact]
-    public void AvailableFillModes_AllAxes_Include9CommonModes()
+    public void AvailableFillModes_NonStrokeAxes_Include9CommonModes()
     {
-        foreach (var id in new[] { "L0", "R0", "R1", "R2" })
+        foreach (var id in new[] { "R0", "R1", "R2" })
         {
             var axis = new AxisConfig { Id = id };
             Assert.Contains(AxisFillMode.None, axis.AvailableFillModes);
@@ -180,39 +167,11 @@ public class AxisConfigTests
             Assert.Contains(AxisFillMode.Pulse, axis.AvailableFillModes);
             Assert.Contains(AxisFillMode.EaseInOut, axis.AvailableFillModes);
         }
-    }
 
-    // ── ShowSyncToggle ───────────────────────────────────────
-
-    [Fact]
-    public void ShowSyncToggle_FalseForL0()
-    {
-        var axis = new AxisConfig { Id = "L0", FillMode = AxisFillMode.Sine };
-        Assert.False(axis.ShowSyncToggle);
-    }
-
-    [Fact]
-    public void ShowSyncToggle_FalseWhenFillModeNone()
-    {
-        var axis = new AxisConfig { Id = "R0", FillMode = AxisFillMode.None };
-        Assert.False(axis.ShowSyncToggle);
-    }
-
-    [Fact]
-    public void ShowSyncToggle_FalseForGrindModes()
-    {
-        var axis = new AxisConfig { Id = "R2", FillMode = AxisFillMode.Grind };
-        Assert.False(axis.ShowSyncToggle);
-
-        axis.FillMode = AxisFillMode.ReverseGrind;
-        Assert.False(axis.ShowSyncToggle);
-    }
-
-    [Fact]
-    public void ShowSyncToggle_TrueForNonL0WithPatternFill()
-    {
-        var axis = new AxisConfig { Id = "R1", FillMode = AxisFillMode.Sine };
-        Assert.True(axis.ShowSyncToggle);
+        // L0 (Stroke) only has None
+        var stroke = new AxisConfig { Id = "L0" };
+        Assert.Single(stroke.AvailableFillModes);
+        Assert.Contains(AxisFillMode.None, stroke.AvailableFillModes);
     }
 
     // ── ScriptFileName / HasScript ───────────────────────────
