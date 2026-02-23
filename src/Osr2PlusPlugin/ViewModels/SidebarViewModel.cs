@@ -24,6 +24,7 @@ public class SidebarViewModel : INotifyPropertyChanged
     private string _selectedComPort = "";
     private int _selectedBaudRate = 115200;
     private bool _isConnected;
+    private bool _hasAttemptedConnection;
     private ITransportService? _transport;
 
     // Output settings
@@ -146,6 +147,8 @@ public class SidebarViewModel : INotifyPropertyChanged
             {
                 OnPropertyChanged(nameof(ConnectButtonText));
                 OnPropertyChanged(nameof(IsNotConnected));
+                OnPropertyChanged(nameof(StatusText));
+                OnPropertyChanged(nameof(StatusTextColor));
             }
         }
     }
@@ -155,6 +158,38 @@ public class SidebarViewModel : INotifyPropertyChanged
 
     /// <summary>Dynamic text for the connect/disconnect button.</summary>
     public string ConnectButtonText => _isConnected ? "Disconnect" : "Connect";
+
+    /// <summary>
+    /// Status bar display text reflecting connection state.
+    /// Connected: "UDP:7777:Connected" or "COM:COM3:Connected".
+    /// Disconnected: "UDP:7777:Disconnected" or "COM:Disconnected".
+    /// Initial (no attempt): "OSR2+:Not Connected".
+    /// </summary>
+    public string StatusText
+    {
+        get
+        {
+            if (!_hasAttemptedConnection)
+                return "OSR2+:Not Connected";
+
+            if (_selectedMode == ConnectionMode.UDP)
+                return _isConnected
+                    ? $"UDP:{_udpPort}:Connected"
+                    : $"UDP:{_udpPort}:Disconnected";
+
+            return _isConnected
+                ? $"COM:{_selectedComPort}:Connected"
+                : "COM:Disconnected";
+        }
+    }
+
+    /// <summary>
+    /// Status bar text color hex: green (#14CC00) connected, red (#CC3333) disconnected,
+    /// dim (#808080) when no connection has been attempted.
+    /// </summary>
+    public string StatusTextColor =>
+        !_hasAttemptedConnection ? "#808080" :
+        _isConnected ? "#14CC00" : "#CC3333";
 
     /// <summary>TCode output rate in Hz (30–200). Persisted and propagated to TCodeService.</summary>
     public int OutputRateHz
@@ -239,13 +274,20 @@ public class SidebarViewModel : INotifyPropertyChanged
 
     internal void Connect()
     {
+        _hasAttemptedConnection = true;
+
         // Dispose any existing transport
         _transport?.Dispose();
         _transport = null;
 
         var (transport, success) = TransportFactory(_selectedMode, _udpPort, _selectedComPort, _selectedBaudRate);
         if (!success || transport == null)
+        {
+            // Connection failed — still update status to show "Disconnected"
+            OnPropertyChanged(nameof(StatusText));
+            OnPropertyChanged(nameof(StatusTextColor));
             return;
+        }
 
         _transport = transport;
 
