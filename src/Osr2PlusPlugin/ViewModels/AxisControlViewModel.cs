@@ -272,6 +272,7 @@ public class AxisControlViewModel : INotifyPropertyChanged
 
             config.SyncWithStroke = _settings.Get($"{prefix}syncWithStroke", config.SyncWithStroke);
             config.FillSpeedHz = _settings.Get($"{prefix}fillSpeedHz", config.FillSpeedHz);
+            config.PositionOffset = _settings.Get($"{prefix}positionOffset", config.PositionOffset);
         }
     }
 
@@ -290,7 +291,64 @@ public class AxisControlViewModel : INotifyPropertyChanged
             _settings.Set($"{prefix}fillMode", config.FillMode.ToString());
             _settings.Set($"{prefix}syncWithStroke", config.SyncWithStroke);
             _settings.Set($"{prefix}fillSpeedHz", config.FillSpeedHz);
+            _settings.Set($"{prefix}positionOffset", config.PositionOffset);
         }
+    }
+
+    /// <summary>
+    /// Handles external setting changes (e.g. from the host Settings Panel).
+    /// Re-reads changed axis keys and updates configs + cards without re-saving.
+    /// </summary>
+    internal void OnSettingChanged(string key)
+    {
+        if (!key.StartsWith("axis_")) return;
+
+        // Parse "axis_{id}_{prop}" format
+        var parts = key.Split('_', 3);
+        if (parts.Length < 3) return;
+
+        var axisId = parts[1];
+        var prop = parts[2];
+        var config = _configs.FirstOrDefault(c => c.Id == axisId);
+        if (config == null) return;
+
+        var prefix = $"axis_{axisId}_";
+
+        switch (prop)
+        {
+            case "min":
+                config.Min = _settings.Get($"{prefix}min", config.Min);
+                break;
+            case "max":
+                config.Max = _settings.Get($"{prefix}max", config.Max);
+                break;
+            case "enabled":
+                config.Enabled = _settings.Get($"{prefix}enabled", config.Enabled);
+                break;
+            case "fillMode":
+                var fillStr = _settings.Get($"{prefix}fillMode", config.FillMode.ToString());
+                if (Enum.TryParse<AxisFillMode>(fillStr, out var fillMode))
+                    config.FillMode = fillMode;
+                break;
+            case "syncWithStroke":
+                config.SyncWithStroke = _settings.Get($"{prefix}syncWithStroke", config.SyncWithStroke);
+                break;
+            case "fillSpeedHz":
+                config.FillSpeedHz = _settings.Get($"{prefix}fillSpeedHz", config.FillSpeedHz);
+                break;
+            case "positionOffset":
+                config.PositionOffset = _settings.Get($"{prefix}positionOffset", config.PositionOffset);
+                break;
+            default:
+                return;
+        }
+
+        // Push updated configs to TCodeService
+        _tcode.SetAxisConfigs(_configs);
+
+        // Refresh the matching AxisCardViewModel
+        var card = AxisCards.FirstOrDefault(c => c.AxisId == axisId);
+        card?.RefreshFromConfig();
     }
 
     // ═══════════════════════════════════════════════════════

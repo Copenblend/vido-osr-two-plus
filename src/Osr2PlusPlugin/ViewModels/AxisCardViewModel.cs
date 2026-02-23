@@ -348,6 +348,27 @@ public class AxisCardViewModel : INotifyPropertyChanged
 
     private void RaiseConfigChanged() => ConfigChanged?.Invoke();
 
+    /// <summary>
+    /// Refreshes all config-backed properties from the underlying <see cref="AxisConfig"/>.
+    /// Called when settings are changed externally (e.g. host Settings Panel).
+    /// Does NOT raise <see cref="ConfigChanged"/> to avoid re-saving.
+    /// </summary>
+    internal void RefreshFromConfig()
+    {
+        OnPropertyChanged(nameof(Min));
+        OnPropertyChanged(nameof(Max));
+        OnPropertyChanged(nameof(RangeLabel));
+        OnPropertyChanged(nameof(Enabled));
+        OnPropertyChanged(nameof(FillMode));
+        OnPropertyChanged(nameof(ShowSyncToggle));
+        OnPropertyChanged(nameof(IsSyncEditable));
+        OnPropertyChanged(nameof(SyncWithStroke));
+        OnPropertyChanged(nameof(ShowFillSpeedSlider));
+        OnPropertyChanged(nameof(FillSpeedHz));
+        OnPropertyChanged(nameof(PositionOffset));
+        OnPropertyChanged(nameof(PositionOffsetLabel));
+    }
+
     // ═══════════════════════════════════════════════════════
     //  INotifyPropertyChanged
     // ═══════════════════════════════════════════════════════
