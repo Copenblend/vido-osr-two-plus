@@ -4,7 +4,6 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:sys="clr-namespace:System;assembly=mscorlib"
-             xmlns:skia="clr-namespace:SkiaSharp.Views.WPF;assembly=SkiaSharp.Views.WPF"
              xmlns:models="clr-namespace:Osr2PlusPlugin.Models"
              xmlns:vm="clr-namespace:Osr2PlusPlugin.ViewModels"
              mc:Ignorable="d"
@@ -64,8 +63,10 @@
 
         <!-- ── Canvas + Empty State ─────────────────────────── -->
         <Grid Grid.Row="1">
-            <!-- SkiaSharp canvas for graph / heatmap rendering -->
-            <skia:SKElement x:Name="SkiaCanvas" PaintSurface="OnPaintSurface" />
+            <!-- SkiaSharp canvas host — SKElement is created in code-behind
+                 so that InitializeComponent() doesn't fail if SkiaSharp
+                 assemblies/native libraries can't be resolved. -->
+            <ContentControl x:Name="CanvasHost" />
 
             <!-- Empty state overlay -->
             <TextBlock x:Name="EmptyStateText"

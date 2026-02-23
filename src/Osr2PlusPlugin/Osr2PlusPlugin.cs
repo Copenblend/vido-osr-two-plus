@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Runtime.InteropServices;
 using Vido.Core.Events;
 using Vido.Core.Playback;
 using Vido.Core.Plugin;
@@ -30,9 +32,32 @@ public class Osr2PlusPlugin : IVidoPlugin
     // Event subscriptions
     private readonly List<IDisposable> _subscriptions = new();
 
+    // Assembly resolver for plugin dependencies (SkiaSharp etc.)
+    private ResolveEventHandler? _assemblyResolveHandler;
+
     public void Activate(IPluginContext context)
     {
         _context = context;
+
+        // ── Register assembly resolver for plugin dependencies ───
+        // The host loads the plugin DLL from a byte array (no probing path),
+        // so .NET cannot locate dependent assemblies (SkiaSharp, etc.)
+        // automatically. This handler resolves them from the plugin directory.
+        _assemblyResolveHandler = (_, args) =>
+        {
+            var name = new AssemblyName(args.Name).Name;
+            if (name is null) return null;
+            var dllPath = System.IO.Path.Combine(context.PluginDirectory, $"{name}.dll");
+            if (System.IO.File.Exists(dllPath))
+                return Assembly.LoadFrom(dllPath);
+            return null;
+        };
+        AppDomain.CurrentDomain.AssemblyResolve += _assemblyResolveHandler;
+
+        // Pre-load the libSkiaSharp native library from the plugin's runtimes
+        // folder so P/Invoke can find it. AddDllDirectory alone doesn't work
+        // because default LoadLibrary doesn't honour it without LOAD_LIBRARY_SEARCH_DEFAULT_DIRS.
+        PreloadNativeSkiaSharp(context);
 
         // ── Create Services ──────────────────────────────────
         _parser = new FunscriptParser();
@@ -55,10 +80,7 @@ public class Osr2PlusPlugin : IVidoPlugin
         // Wire sidebar button to show/expand bottom panel
         _sidebarVm.ShowVisualizerRequested += () =>
         {
-            // Bottom panel is registered on activation and becomes available
-            // as a tab in the Vido bottom panel area. This event handler is
-            // ready for RequestShowBottomPanel when the API is available.
-            context.Logger.Debug("Show Funscript Visualizer requested", "OSR2+");
+            context.RequestShowBottomPanel("osr2-visualizer");
         };
 
         // Wire device connection state to axis control
@@ -95,6 +117,8 @@ public class Osr2PlusPlugin : IVidoPlugin
         context.RegisterSidebarPanel("osr2-sidebar", () => new SidebarView { DataContext = _sidebarVm });
         context.RegisterRightPanel("osr2-axis-control", () => new AxisControlView { DataContext = _axisControlVm });
         context.RegisterBottomPanel("osr2-visualizer", () => new VisualizerView { DataContext = _visualizerVm });
+        context.RegisterStatusBarItem("osr2-status", () => new StatusBarView { DataContext = _sidebarVm });
+        context.RegisterToolbarButtonHandler("osr2-quick-connect", OnQuickConnectClicked);
 
         context.RegisterFileIcons(new Dictionary<string, string>
         {
@@ -116,6 +140,13 @@ public class Osr2PlusPlugin : IVidoPlugin
     {
         foreach (var sub in _subscriptions) sub.Dispose();
         _subscriptions.Clear();
+
+        // Remove the assembly resolver
+        if (_assemblyResolveHandler is not null)
+        {
+            AppDomain.CurrentDomain.AssemblyResolve -= _assemblyResolveHandler;
+            _assemblyResolveHandler = null;
+        }
 
         _tcode?.Dispose();
 
@@ -168,5 +199,61 @@ public class Osr2PlusPlugin : IVidoPlugin
     private void LoadSettings()
     {
         // Each ViewModel loads its own settings from the IPluginSettingsStore
+    }
+
+    // ── Quick Connect ────────────────────────────────────────
+
+    private void OnQuickConnectClicked()
+    {
+        try
+        {
+            _sidebarVm?.ConnectCommand.Execute(null);
+        }
+        catch (Exception ex)
+        {
+            _context?.Logger.Error($"Quick connect error: {ex.Message}", "OSR2+");
+        }
+    }
+
+    // ── Native library loading ─────────────────────────────
+
+    /// <summary>
+    /// Eagerly loads the libSkiaSharp native library from the plugin's
+    /// <c>runtimes/{rid}/native</c> folder using <see cref="NativeLibrary.Load"/>.
+    /// This ensures the DLL is already in the process before SkiaSharp's
+    /// P/Invoke calls attempt to find it via the default search order
+    /// (which doesn't include the plugin directory).
+    /// </summary>
+    private static void PreloadNativeSkiaSharp(IPluginContext context)
+    {
+        var rid = RuntimeInformation.ProcessArchitecture switch
+        {
+            Architecture.X64   => "win-x64",
+            Architecture.Arm64 => "win-arm64",
+            Architecture.X86   => "win-x86",
+            _                  => "win-x64"
+        };
+
+        var nativePath = System.IO.Path.Combine(
+            context.PluginDirectory, "runtimes", rid, "native", "libSkiaSharp.dll");
+
+        if (!System.IO.File.Exists(nativePath))
+        {
+            context.Logger.Warning(
+                $"Native library not found at '{nativePath}'", "OSR2+");
+            return;
+        }
+
+        try
+        {
+            NativeLibrary.Load(nativePath);
+            context.Logger.Debug(
+                $"Pre-loaded native library: {nativePath}", "OSR2+");
+        }
+        catch (Exception ex)
+        {
+            context.Logger.Error(
+                $"Failed to pre-load libSkiaSharp: {ex.Message}", "OSR2+");
+        }
     }
 }
