@@ -148,7 +148,6 @@ public class SidebarViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(ConnectButtonText));
                 OnPropertyChanged(nameof(IsNotConnected));
                 OnPropertyChanged(nameof(StatusText));
-                OnPropertyChanged(nameof(StatusTextColor));
             }
         }
     }
@@ -182,14 +181,6 @@ public class SidebarViewModel : INotifyPropertyChanged
                 : "COM:Disconnected";
         }
     }
-
-    /// <summary>
-    /// Status bar text color hex: green (#14CC00) connected, red (#CC3333) disconnected,
-    /// dim (#808080) when no connection has been attempted.
-    /// </summary>
-    public string StatusTextColor =>
-        !_hasAttemptedConnection ? "#808080" :
-        _isConnected ? "#14CC00" : "#CC3333";
 
     /// <summary>TCode output rate in Hz (30–200). Persisted and propagated to TCodeService.</summary>
     public int OutputRateHz
@@ -285,7 +276,6 @@ public class SidebarViewModel : INotifyPropertyChanged
         {
             // Connection failed — still update status to show "Disconnected"
             OnPropertyChanged(nameof(StatusText));
-            OnPropertyChanged(nameof(StatusTextColor));
             return;
         }
 
@@ -296,6 +286,12 @@ public class SidebarViewModel : INotifyPropertyChanged
 
         // Assign to TCodeService and start output
         _tcode.Transport = _transport;
+
+        // Gradually move all axes to midpoint before starting normal output.
+        // This ensures the device starts from a known safe center position
+        // regardless of where the hardware was left by a previous session.
+        _tcode.HomeAxes();
+
         _tcode.Start();
 
         IsConnected = true;

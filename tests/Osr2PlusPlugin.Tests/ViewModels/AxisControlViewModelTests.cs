@@ -497,12 +497,12 @@ public class AxisControlViewModelTests : IDisposable
     // ═══════════════════════════════════════════════════════
 
     [Fact]
-    public void TestCommand_StartsAllTestableAxes()
+    public void TestCommand_StartsAllEnabledAxes()
     {
         var sut = CreateSut();
         sut.SetDeviceConnected(true);
 
-        // Set fill modes on non-stroke axes
+        // Set fill modes on some non-stroke axes, leave R2 as None
         sut.AxisCards[1].FillMode = AxisFillMode.Triangle; // R0
         sut.AxisCards[2].FillMode = AxisFillMode.Sine;     // R1
 
@@ -513,7 +513,7 @@ public class AxisControlViewModelTests : IDisposable
         Assert.True(_tcode.IsAxisTesting("L0")); // L0 always tested
         Assert.True(_tcode.IsAxisTesting("R0")); // Has fill mode
         Assert.True(_tcode.IsAxisTesting("R1")); // Has fill mode
-        Assert.False(_tcode.IsAxisTesting("R2")); // FillMode.None → skipped
+        Assert.True(_tcode.IsAxisTesting("R2")); // None fill — still registered for live switching
     }
 
     [Fact]
@@ -613,6 +613,46 @@ public class AxisControlViewModelTests : IDisposable
         _tcode.StopAllTestAxes();
 
         Assert.False(sut.IsTesting);
+    }
+
+    [Fact]
+    public void TestCommand_NoneAxesRegistered_SoFillSwitchWorks()
+    {
+        // Start test with all non-stroke axes set to None
+        var sut = CreateSut();
+        sut.SetDeviceConnected(true);
+        // All non-stroke axes default to FillMode.None
+
+        sut.TestCommand.Execute(null);
+
+        // All enabled axes should be in the test set, even with None fill
+        Assert.True(sut.IsTesting);
+        Assert.True(_tcode.IsAxisTesting("L0"));
+        Assert.True(_tcode.IsAxisTesting("R0"));
+        Assert.True(_tcode.IsAxisTesting("R1"));
+        Assert.True(_tcode.IsAxisTesting("R2"));
+
+        // Simulate changing fill mode mid-test — axis is already registered
+        // so the output loop will pick up the new fill mode on the next tick
+        sut.AxisCards[1].FillMode = AxisFillMode.Triangle;
+        Assert.True(_tcode.IsAxisTesting("R0")); // Still in test set
+    }
+
+    [Fact]
+    public void SetDeviceConnected_False_StopsTestingAndClearesButton()
+    {
+        var sut = CreateSut();
+        sut.SetDeviceConnected(true);
+        sut.TestCommand.Execute(null);
+        Assert.True(sut.IsTesting);
+        Assert.True(_tcode.IsAxisTesting("L0"));
+
+        // Disconnect
+        sut.SetDeviceConnected(false);
+
+        Assert.False(sut.IsTesting);
+        Assert.Equal("Test", sut.TestButtonText);
+        Assert.False(_tcode.IsAxisTesting("L0"));
     }
 
     // ═══════════════════════════════════════════════════════

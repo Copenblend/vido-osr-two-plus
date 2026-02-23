@@ -104,6 +104,12 @@ public class Osr2PlusPlugin : IVidoPlugin
                 _axisControlVm.SetDeviceConnected(_sidebarVm.IsConnected);
                 context.SetToolbarButtonHighlight("osr2-quick-connect", _sidebarVm.IsConnected);
             }
+
+            // Push status bar text updates to the host
+            if (e.PropertyName == nameof(SidebarViewModel.StatusText))
+            {
+                context.UpdateStatusBarItem("osr2-status", _sidebarVm.StatusText);
+            }
         };
 
         // Wire script changes to visualizer
@@ -133,7 +139,7 @@ public class Osr2PlusPlugin : IVidoPlugin
         context.RegisterSidebarPanel("osr2-sidebar", () => new SidebarView { DataContext = _sidebarVm });
         context.RegisterRightPanel("osr2-axis-control", () => new AxisControlView { DataContext = _axisControlVm });
         context.RegisterBottomPanel("osr2-visualizer", () => new VisualizerView { DataContext = _visualizerVm });
-        context.RegisterStatusBarItem("osr2-status", () => new StatusBarView { DataContext = _sidebarVm });
+        context.RegisterStatusBarItem("osr2-status", () => _sidebarVm.StatusText);
         context.RegisterToolbarButtonHandler("osr2-quick-connect", OnQuickConnectClicked);
 
         var iconsDir = System.IO.Path.Combine(context.PluginDirectory, "Assets", "Icons");
