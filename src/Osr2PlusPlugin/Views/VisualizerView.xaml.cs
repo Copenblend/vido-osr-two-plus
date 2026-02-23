@@ -17,6 +17,7 @@ namespace Osr2PlusPlugin.Views;
 public partial class VisualizerView : UserControl
 {
     private VisualizerViewModel? _viewModel;
+    private SKElement? _skiaCanvas;
 
     // ── Heatmap color stops (speed → color) ──────────────────
     private static readonly (float speed, SKColor color)[] HeatmapStops =
@@ -32,6 +33,22 @@ public partial class VisualizerView : UserControl
     public VisualizerView()
     {
         InitializeComponent();
+
+        // Create SKElement in code-behind so InitializeComponent() won't
+        // fail if SkiaSharp assemblies or native libraries aren't resolved yet.
+        try
+        {
+            _skiaCanvas = new SKElement();
+            _skiaCanvas.PaintSurface += OnPaintSurface;
+            CanvasHost.Content = _skiaCanvas;
+        }
+        catch (Exception)
+        {
+            // SkiaSharp failed to load — show a fallback message
+            EmptyStateText.Text = "Visualizer unavailable (SkiaSharp failed to load)";
+            EmptyStateText.Visibility = Visibility.Visible;
+        }
+
         DataContextChanged += OnDataContextChanged;
         CompositionTarget.Rendering += OnRendering;
     }
@@ -86,7 +103,7 @@ public partial class VisualizerView : UserControl
     private void OnRendering(object? sender, EventArgs e)
     {
         if (_viewModel?.HasScripts == true && IsVisible)
-            SkiaCanvas.InvalidateVisual();
+            _skiaCanvas?.InvalidateVisual();
     }
 
     // ── Paint surface entry point ────────────────────────────

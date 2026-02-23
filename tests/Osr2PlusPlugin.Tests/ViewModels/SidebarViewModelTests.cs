@@ -568,6 +568,84 @@ public class SidebarViewModelTests : IDisposable
         Assert.Contains(nameof(SidebarViewModel.StatusTextColor), raised);
     }
 
+    // ═══════════════════════════════════════════════════════
+    //  Quick Connect Toggle (ConnectCommand — VOSR-031)
+    // ═══════════════════════════════════════════════════════
+
+    [Fact]
+    public void QuickConnect_Toggle_ConnectsThenDisconnects()
+    {
+        Assert.False(_sut.IsConnected);
+
+        // First click → connect
+        _sut.ConnectCommand.Execute(null);
+        Assert.True(_sut.IsConnected);
+
+        // Second click → disconnect
+        _sut.ConnectCommand.Execute(null);
+        Assert.False(_sut.IsConnected);
+    }
+
+    [Fact]
+    public void QuickConnect_Toggle_UpdatesStatusText()
+    {
+        // Initial
+        Assert.Equal("OSR2+:Not Connected", _sut.StatusText);
+
+        // Connect via command
+        _sut.ConnectCommand.Execute(null);
+        Assert.Equal("UDP:7777:Connected", _sut.StatusText);
+        Assert.Equal("#14CC00", _sut.StatusTextColor);
+
+        // Disconnect via command
+        _sut.ConnectCommand.Execute(null);
+        Assert.Equal("UDP:7777:Disconnected", _sut.StatusText);
+        Assert.Equal("#CC3333", _sut.StatusTextColor);
+    }
+
+    [Fact]
+    public void QuickConnect_UsesSameLogicAsSidebarConnect()
+    {
+        // Verify ConnectCommand exercises the same Connect/Disconnect
+        // methods, which means the same transport factory is used
+        var connectCalled = false;
+        _sut.TransportFactory = (mode, port, comPort, baud) =>
+        {
+            connectCalled = true;
+            return (_mockTransport, true);
+        };
+
+        _sut.ConnectCommand.Execute(null);
+
+        Assert.True(connectCalled);
+        Assert.True(_sut.IsConnected);
+    }
+
+    [Fact]
+    public void QuickConnect_SerialMode_UsesCurrentSettings()
+    {
+        _sut.SelectedMode = ConnectionMode.Serial;
+        _sut.SelectedComPort = "COM4";
+        _sut.SelectedBaudRate = 9600;
+
+        ConnectionMode? capturedMode = null;
+        string? capturedComPort = null;
+        int? capturedBaud = null;
+        _sut.TransportFactory = (mode, port, comPort, baud) =>
+        {
+            capturedMode = mode;
+            capturedComPort = comPort;
+            capturedBaud = baud;
+            return (_mockTransport, true);
+        };
+
+        _sut.ConnectCommand.Execute(null);
+
+        Assert.Equal(ConnectionMode.Serial, capturedMode);
+        Assert.Equal("COM4", capturedComPort);
+        Assert.Equal(9600, capturedBaud);
+    }
+
     // ===== Mock Transport =====
 
     private class MockTransport : ITransportService
