@@ -32,6 +32,9 @@ public class Osr2PlusPlugin : IVidoPlugin
     // Event subscriptions
     private readonly List<IDisposable> _subscriptions = new();
 
+    // Speed ratio tracking — avoid redundant SetPlaybackSpeed calls
+    private double _lastSpeedRatio = 1.0;
+
     // Assembly resolver for plugin dependencies (SkiaSharp etc.)
     private ResolveEventHandler? _assemblyResolveHandler;
 
@@ -157,41 +160,97 @@ public class Osr2PlusPlugin : IVidoPlugin
 
     private void OnVideoLoaded(VideoLoadedEvent e)
     {
-        _context?.Logger.Debug($"Video loaded: {e.FilePath}", "OSR2+");
+        try
+        {
+            _context?.Logger.Debug($"Video loaded: {e.FilePath}", "OSR2+");
 
-        if (_axisControlVm is null || _context is null) return;
+            if (_axisControlVm is null || _context is null) return;
 
-        _axisControlVm.LoadScriptsForVideo(e.FilePath);
-        _context.Logger.Info($"Scripts loaded for: {e.FilePath}", "OSR2+");
+            _axisControlVm.LoadScriptsForVideo(e.FilePath);
+
+            // Sync speed ratio from the video engine in case it was changed
+            // before this video was loaded (e.g. user set 2× and opened a file)
+            SyncSpeedRatio();
+
+            _context.Logger.Info($"Scripts loaded for: {e.FilePath}", "OSR2+");
+        }
+        catch (Exception ex)
+        {
+            _context?.Logger.Error($"VideoLoaded handler error: {ex.Message}", "OSR2+");
+        }
     }
 
     private void OnVideoUnloaded(VideoUnloadedEvent e)
     {
-        _context?.Logger.Debug("Video unloaded", "OSR2+");
+        try
+        {
+            _context?.Logger.Debug("Video unloaded", "OSR2+");
 
-        if (_axisControlVm is null || _tcode is null) return;
+            if (_axisControlVm is null || _tcode is null) return;
 
-        _axisControlVm.ClearScripts();
-        _tcode.SetPlaying(false);
-        _axisControlVm.SetVideoPlaying(false);
-        _visualizerVm?.ClearAxes();
+            _axisControlVm.ClearScripts();
+            _tcode.SetPlaying(false);
+            _axisControlVm.SetVideoPlaying(false);
+            _visualizerVm?.ClearAxes();
+        }
+        catch (Exception ex)
+        {
+            _context?.Logger.Error($"VideoUnloaded handler error: {ex.Message}", "OSR2+");
+        }
     }
 
     private void OnPlaybackStateChanged(PlaybackStateChangedEvent e)
     {
-        _context?.Logger.Debug($"Playback state: {e.State}", "OSR2+");
+        try
+        {
+            _context?.Logger.Debug($"Playback state: {e.State}", "OSR2+");
 
-        if (_tcode is null || _axisControlVm is null) return;
+            if (_tcode is null || _axisControlVm is null) return;
 
-        var isPlaying = e.State == Vido.Core.Playback.PlaybackState.Playing;
-        _tcode.SetPlaying(isPlaying);
-        _axisControlVm.SetVideoPlaying(isPlaying);
+            var isPlaying = e.State == Vido.Core.Playback.PlaybackState.Playing;
+            _tcode.SetPlaying(isPlaying);
+            _axisControlVm.SetVideoPlaying(isPlaying);
+        }
+        catch (Exception ex)
+        {
+            _context?.Logger.Error($"PlaybackStateChanged handler error: {ex.Message}", "OSR2+");
+        }
     }
 
     private void OnPositionChanged(PlaybackPositionChangedEvent e)
     {
-        _tcode?.SetTime(e.Position.TotalMilliseconds);
-        _visualizerVm?.UpdateTime(e.Position.TotalSeconds);
+        try
+        {
+            _tcode?.SetTime(e.Position.TotalMilliseconds);
+            _visualizerVm?.UpdateTime(e.Position.TotalSeconds);
+
+            // Poll speed ratio from the video engine on each position tick.
+            // There is no dedicated SpeedRatioChanged event, so we check here
+            // (~60 Hz) and only call SetPlaybackSpeed when the value changes.
+            SyncSpeedRatio();
+        }
+        catch (Exception ex)
+        {
+            _context?.Logger.Error($"PositionChanged handler error: {ex.Message}", "OSR2+");
+        }
+    }
+
+    /// <summary>
+    /// Reads the current speed ratio from the video engine and forwards it
+    /// to <see cref="TCodeService.SetPlaybackSpeed"/> if it has changed.
+    /// </summary>
+    private void SyncSpeedRatio()
+    {
+        if (_context is null || _tcode is null) return;
+
+        var speed = _context.VideoEngine.SpeedRatio;
+        // ReSharper disable once CompareOfFloatsByEqualityOperator
+        if (speed != _lastSpeedRatio)
+        {
+            _lastSpeedRatio = speed;
+            _tcode.SetPlaybackSpeed((float)speed);
+            _context.Logger.Debug($"Playback speed updated: {speed:F2}×", "OSR2+");
+        }
     }
 
     // ── Settings ─────────────────────────────────────────────
