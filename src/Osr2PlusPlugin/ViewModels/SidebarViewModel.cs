@@ -377,6 +377,44 @@ public class SidebarViewModel : INotifyPropertyChanged
         _tcode.SetOffset(_globalOffsetMs);
     }
 
+    /// <summary>
+    /// Handles external setting changes (e.g. from the host Settings Panel).
+    /// Re-reads the changed key and updates the backing field + service
+    /// without re-saving (to avoid circular writes).
+    /// </summary>
+    internal void OnSettingChanged(string key)
+    {
+        switch (key)
+        {
+            case "defaultConnectionMode":
+                var modeStr = _settings.Get("defaultConnectionMode", "UDP");
+                if (Enum.TryParse<ConnectionMode>(modeStr, out var mode) && mode != _selectedMode)
+                {
+                    _selectedMode = mode;
+                    OnPropertyChanged(nameof(SelectedMode));
+                    OnPropertyChanged(nameof(IsUdpMode));
+                    OnPropertyChanged(nameof(IsSerialMode));
+                }
+                break;
+            case "defaultUdpPort":
+                var port = _settings.Get("defaultUdpPort", 7777);
+                if (port != _udpPort) { _udpPort = port; OnPropertyChanged(nameof(UdpPort)); }
+                break;
+            case "defaultBaudRate":
+                var baud = _settings.Get("defaultBaudRate", 115200);
+                if (baud != _selectedBaudRate) { _selectedBaudRate = baud; OnPropertyChanged(nameof(SelectedBaudRate)); }
+                break;
+            case "tcodeOutputRate":
+                var rate = Math.Clamp(_settings.Get("tcodeOutputRate", 100), 30, 200);
+                if (rate != _outputRateHz) { _outputRateHz = rate; _tcode.SetOutputRate(rate); OnPropertyChanged(nameof(OutputRateHz)); }
+                break;
+            case "globalFunscriptOffset":
+                var offset = Math.Clamp(_settings.Get("globalFunscriptOffset", 0), -500, 500);
+                if (offset != _globalOffsetMs) { _globalOffsetMs = offset; _tcode.SetOffset(offset); OnPropertyChanged(nameof(GlobalOffsetMs)); }
+                break;
+        }
+    }
+
     // ===== INotifyPropertyChanged =====
 
     public event PropertyChangedEventHandler? PropertyChanged;

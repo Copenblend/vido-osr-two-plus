@@ -129,7 +129,10 @@ public class Osr2PlusPlugin : IVidoPlugin
         });
 
         // ── Load Saved Settings ──────────────────────────────
-        LoadSettings();
+        // Each ViewModel loads its own settings during construction.
+        // Subscribe to SettingChanged so external changes (e.g. host
+        // Settings Panel) propagate to VMs and services in real-time.
+        context.Settings.SettingChanged += OnSettingChanged;
 
         // ── Restore Right Panel ──────────────────────────────
         var lastPanel = context.Settings.Get("lastRightPanel", "");
@@ -143,6 +146,10 @@ public class Osr2PlusPlugin : IVidoPlugin
     {
         foreach (var sub in _subscriptions) sub.Dispose();
         _subscriptions.Clear();
+
+        // Unsubscribe from settings changes
+        if (_context is not null)
+            _context.Settings.SettingChanged -= OnSettingChanged;
 
         // Remove the assembly resolver
         if (_assemblyResolveHandler is not null)
@@ -255,9 +262,22 @@ public class Osr2PlusPlugin : IVidoPlugin
 
     // ── Settings ─────────────────────────────────────────────
 
-    private void LoadSettings()
+    /// <summary>
+    /// Handles external setting changes from the host Settings Panel.
+    /// Dispatches to the owning ViewModel so the UI and services stay in sync.
+    /// </summary>
+    private void OnSettingChanged(string key)
     {
-        // Each ViewModel loads its own settings from the IPluginSettingsStore
+        try
+        {
+            _sidebarVm?.OnSettingChanged(key);
+            _axisControlVm?.OnSettingChanged(key);
+            _visualizerVm?.OnSettingChanged(key);
+        }
+        catch (Exception ex)
+        {
+            _context?.Logger.Error($"SettingChanged handler error: {ex.Message}", "OSR2+");
+        }
     }
 
     // ── Quick Connect ────────────────────────────────────────

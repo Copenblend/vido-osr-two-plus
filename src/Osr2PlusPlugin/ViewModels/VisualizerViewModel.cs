@@ -194,6 +194,39 @@ public class VisualizerViewModel : INotifyPropertyChanged
         }
     }
 
+    /// <summary>
+    /// Handles external setting changes (e.g. from the host Settings Panel).
+    /// Re-reads the changed key and updates the backing field without re-saving.
+    /// </summary>
+    internal void OnSettingChanged(string key)
+    {
+        switch (key)
+        {
+            case "visualizerMode":
+                var modeStr = _settings.Get("visualizerMode", "Graph");
+                if (Enum.TryParse<VisualizationMode>(modeStr, out var mode) && mode != _selectedMode)
+                {
+                    _selectedMode = mode;
+                    OnPropertyChanged(nameof(SelectedMode));
+                    RepaintRequested?.Invoke();
+                }
+                break;
+            case "visualizerWindowDuration":
+                var durStr = _settings.Get("visualizerWindowDuration", "60");
+                if (int.TryParse(durStr, out var dur) &&
+                    Array.IndexOf(AvailableWindowDurations, dur) >= 0 &&
+                    dur != _windowDurationSeconds)
+                {
+                    _windowDurationSeconds = dur;
+                    OnPropertyChanged(nameof(WindowDurationSeconds));
+                    OnPropertyChanged(nameof(TimeWindowRadius));
+                    OnPropertyChanged(nameof(WindowDurationIndex));
+                    RepaintRequested?.Invoke();
+                }
+                break;
+        }
+    }
+
     // ── INotifyPropertyChanged ───────────────────────────────
 
     public event PropertyChangedEventHandler? PropertyChanged;
