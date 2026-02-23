@@ -50,6 +50,16 @@ public class Osr2PlusPlugin : IVidoPlugin
         {
             var name = new AssemblyName(args.Name).Name;
             if (name is null) return null;
+
+            // Prefer RID-specific assembly (e.g. runtimes/win/lib/net8.0/) so that
+            // platform-dependent packages like System.IO.Ports load the real Windows
+            // implementation instead of the portable stub that throws
+            // PlatformNotSupportedException.
+            var ridPath = System.IO.Path.Combine(
+                context.PluginDirectory, "runtimes", "win", "lib", "net8.0", $"{name}.dll");
+            if (System.IO.File.Exists(ridPath))
+                return Assembly.LoadFrom(ridPath);
+
             var dllPath = System.IO.Path.Combine(context.PluginDirectory, $"{name}.dll");
             if (System.IO.File.Exists(dllPath))
                 return Assembly.LoadFrom(dllPath);
@@ -90,7 +100,10 @@ public class Osr2PlusPlugin : IVidoPlugin
         _sidebarVm.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(SidebarViewModel.IsConnected))
+            {
                 _axisControlVm.SetDeviceConnected(_sidebarVm.IsConnected);
+                context.SetToolbarButtonHighlight("osr2-quick-connect", _sidebarVm.IsConnected);
+            }
         };
 
         // Wire script changes to visualizer
@@ -123,9 +136,13 @@ public class Osr2PlusPlugin : IVidoPlugin
         context.RegisterStatusBarItem("osr2-status", () => new StatusBarView { DataContext = _sidebarVm });
         context.RegisterToolbarButtonHandler("osr2-quick-connect", OnQuickConnectClicked);
 
+        var iconsDir = System.IO.Path.Combine(context.PluginDirectory, "Assets", "Icons");
         context.RegisterFileIcons(new Dictionary<string, string>
         {
-            { ".funscript", System.IO.Path.Combine(context.PluginDirectory, "Assets", "Icons", "funscript-stroke.png") }
+            { ".funscript", System.IO.Path.Combine(iconsDir, "funscript-stroke.png") },
+            { ".twist.funscript", System.IO.Path.Combine(iconsDir, "funscript-twist.png") },
+            { ".roll.funscript", System.IO.Path.Combine(iconsDir, "funscript-roll.png") },
+            { ".pitch.funscript", System.IO.Path.Combine(iconsDir, "funscript-pitch.png") }
         });
 
         // ── Load Saved Settings ──────────────────────────────

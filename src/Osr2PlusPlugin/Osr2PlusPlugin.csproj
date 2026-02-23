@@ -10,7 +10,7 @@
     <InternalsVisibleTo Include="Osr2PlusPlugin.Tests" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Vido.Core" Version="0.5.2" />
+    <PackageReference Include="Vido.Core" Version="0.5.3" />
     <PackageReference Include="System.IO.Ports" Version="8.*" />
     <PackageReference Include="SkiaSharp" Version="2.*" />
     <PackageReference Include="SkiaSharp.Views.WPF" Version="2.*" />

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using Osr2PlusPlugin.Models;
 using Osr2PlusPlugin.Services;
 using Xunit;
@@ -112,6 +113,289 @@ public class TCodeServiceTests : IDisposable
     {
         _sut.SetOutputRate(input);
         Assert.Equal(expected, _sut.OutputRateHz);
+    }
+
+    [Fact]
+    public void OutputRate_HigherRate_ProducesSmallerInterval()
+    {
+        // At 200 Hz the I parameter should be roughly half of the 100 Hz baseline
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(1000, 100) } }
+        };
+
+        // Run at default 100 Hz
+        _sut.SetOutputRate(100);
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(500);
+
+        _sut.Start();
+        Thread.Sleep(200);
+        _sut.StopTimer();
+
+        var baselineIntervals = ExtractIntervalValues(_transport.SentMessages);
+        Assert.True(baselineIntervals.Count > 0, "Expected output at 100 Hz");
+
+        // Reset
+        _transport.SentMessages.Clear();
+        _sut.SetScripts(scripts); // Reset dirty tracking
+
+        // Run at 200 Hz (I should be ~half)
+        _sut.SetOutputRate(200);
+        _sut.SetPlaying(true);
+        _sut.SetTime(500);
+
+        _sut.Start();
+        Thread.Sleep(200);
+        _sut.StopTimer();
+
+        var highRateIntervals = ExtractIntervalValues(_transport.SentMessages);
+        Assert.True(highRateIntervals.Count > 0, "Expected output at 200 Hz");
+
+        // Median I at 200 Hz should be less than median I at 100 Hz
+        var baselineMedian = Median(baselineIntervals);
+        var highRateMedian = Median(highRateIntervals);
+        Assert.True(highRateMedian < baselineMedian,
+            $"Expected 200 Hz interval ({highRateMedian}) < 100 Hz interval ({baselineMedian})");
+    }
+
+    [Fact]
+    public void OutputRate_LowerRate_ProducesLargerInterval()
+    {
+        // At 50 Hz the I parameter should be roughly double the 100 Hz baseline
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(1000, 100) } }
+        };
+
+        // Run at default 100 Hz
+        _sut.SetOutputRate(100);
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(500);
+
+        _sut.Start();
+        Thread.Sleep(200);
+        _sut.StopTimer();
+
+        var baselineIntervals = ExtractIntervalValues(_transport.SentMessages);
+        Assert.True(baselineIntervals.Count > 0, "Expected output at 100 Hz");
+
+        // Reset
+        _transport.SentMessages.Clear();
+        _sut.SetScripts(scripts);
+
+        // Run at 50 Hz (I should be ~double)
+        _sut.SetOutputRate(50);
+        _sut.SetPlaying(true);
+        _sut.SetTime(500);
+
+        _sut.Start();
+        Thread.Sleep(200);
+        _sut.StopTimer();
+
+        var lowRateIntervals = ExtractIntervalValues(_transport.SentMessages);
+        Assert.True(lowRateIntervals.Count > 0, "Expected output at 50 Hz");
+
+        // Median I at 50 Hz should be greater than median I at 100 Hz
+        var baselineMedian = Median(baselineIntervals);
+        var lowRateMedian = Median(lowRateIntervals);
+        Assert.True(lowRateMedian > baselineMedian,
+            $"Expected 50 Hz interval ({lowRateMedian}) > 100 Hz interval ({baselineMedian})");
+    }
+
+    [Fact]
+    public void OutputRate_DefaultRate_IntervalApproximatelyMatchesElapsed()
+    {
+        // At the default 100 Hz, scale factor = 1.0, so I ≈ elapsed ms
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(1000, 100) } }
+        };
+
+        _sut.SetOutputRate(100);
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(500);
+
+        _sut.Start();
+        Thread.Sleep(200);
+        _sut.StopTimer();
+
+        var intervals = ExtractIntervalValues(_transport.SentMessages);
+        Assert.True(intervals.Count > 0, "Expected output at 100 Hz");
+
+        // At 100 Hz, each tick is ~10ms, so I should be in the range 5-20ms
+        var median = Median(intervals);
+        Assert.InRange(median, 5, 25);
+    }
+
+    /// <summary>
+    /// Extracts all I parameter values from TCode messages (e.g., "L0499I10" → 10).
+    /// </summary>
+    private static List<int> ExtractIntervalValues(List<string> messages)
+    {
+        var result = new List<int>();
+        var regex = new Regex(@"I(\d+)");
+        foreach (var msg in messages)
+        {
+            foreach (Match m in regex.Matches(msg))
+            {
+                result.Add(int.Parse(m.Groups[1].Value));
+            }
+        }
+        return result;
+    }
+
+    private static double Median(List<int> values)
+    {
+        var sorted = values.OrderBy(v => v).ToList();
+        int mid = sorted.Count / 2;
+        return sorted.Count % 2 == 0
+            ? (sorted[mid - 1] + sorted[mid]) / 2.0
+            : sorted[mid];
+    }
+
+    /// <summary>
+    /// Extracts L0 TCode position values from messages (e.g., "L0499I10" → 499).
+    /// </summary>
+    private static List<int> ExtractL0Values(List<string> messages)
+    {
+        var result = new List<int>();
+        var regex = new Regex(@"L0(\d{3})I");
+        foreach (var msg in messages)
+        {
+            var m = regex.Match(msg);
+            if (m.Success) result.Add(int.Parse(m.Groups[1].Value));
+        }
+        return result;
+    }
+
+    // ===== Output Rate — Position Scaling =====
+
+    [Fact]
+    public void OutputRate_HigherRate_AmplifiesPositions()
+    {
+        // At 200 Hz positions should be amplified away from center (499)
+        // Script: L0 goes from 0 to 100 linearly. At t=250, pos = 25.
+        // At 100 Hz: TCode ~ PositionToTCode(25) = 249
+        // At 200 Hz: scaledPos = 50 + (25-50)*2 = 0 → TCode = 0
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(1000, 100) } }
+        };
+
+        // Run at 100 Hz baseline
+        _sut.SetOutputRate(100);
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(250);
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        var baselineValues = ExtractL0Values(_transport.SentMessages);
+        Assert.True(baselineValues.Count > 0, "Expected output at 100 Hz");
+        var baselineFirst = baselineValues[0];
+
+        // Reset
+        _transport.SentMessages.Clear();
+        _sut.SetScripts(scripts);
+
+        // Run at 200 Hz (positions should be more extreme — further from 499)
+        _sut.SetOutputRate(200);
+        _sut.SetPlaying(true);
+        _sut.SetTime(250);
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        var amplifiedValues = ExtractL0Values(_transport.SentMessages);
+        Assert.True(amplifiedValues.Count > 0, "Expected output at 200 Hz");
+        var amplifiedFirst = amplifiedValues[0];
+
+        // At t=250, position ≈ 25. Baseline TCode ≈ 249.
+        // At 2× scale: 50 + (25-50)*2 = 0 → TCode = 0.
+        // Amplified value should be further from midpoint (499) than baseline.
+        var baselineDist = Math.Abs(baselineFirst - 499);
+        var amplifiedDist = Math.Abs(amplifiedFirst - 499);
+        Assert.True(amplifiedDist > baselineDist,
+            $"Expected 200 Hz value ({amplifiedFirst}) further from 499 than 100 Hz ({baselineFirst})");
+    }
+
+    [Fact]
+    public void OutputRate_LowerRate_DampensPositions()
+    {
+        // At 50 Hz positions should be dampened toward center (499)
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(1000, 100) } }
+        };
+
+        // Run at 100 Hz baseline
+        _sut.SetOutputRate(100);
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(250);
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        var baselineValues = ExtractL0Values(_transport.SentMessages);
+        Assert.True(baselineValues.Count > 0, "Expected output at 100 Hz");
+        var baselineFirst = baselineValues[0];
+
+        // Reset
+        _transport.SentMessages.Clear();
+        _sut.SetScripts(scripts);
+
+        // Run at 50 Hz (positions should be closer to center)
+        _sut.SetOutputRate(50);
+        _sut.SetPlaying(true);
+        _sut.SetTime(250);
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        var dampenedValues = ExtractL0Values(_transport.SentMessages);
+        Assert.True(dampenedValues.Count > 0, "Expected output at 50 Hz");
+        var dampenedFirst = dampenedValues[0];
+
+        // Dampened value should be closer to midpoint (499) than baseline
+        var baselineDist = Math.Abs(baselineFirst - 499);
+        var dampenedDist = Math.Abs(dampenedFirst - 499);
+        Assert.True(dampenedDist < baselineDist,
+            $"Expected 50 Hz value ({dampenedFirst}) closer to 499 than 100 Hz ({baselineFirst})");
+    }
+
+    [Fact]
+    public void OutputRate_DefaultRate_PositionsUnchanged()
+    {
+        // At exactly 100 Hz, speedMultiplier = 1.0 → positions pass through unchanged
+        // Script: L0 = 80 constant. At 100 Hz: TCode = PositionToTCode(80) = 799
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 80), new(100000, 80) } }
+        };
+
+        _sut.SetOutputRate(100);
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(500);
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        var values = ExtractL0Values(_transport.SentMessages);
+        Assert.True(values.Count > 0, "Expected output");
+        // Position 80 → TCode 799 (with default 0-100 range)
+        Assert.Equal(799, values[0]);
     }
 
     // ===== Time Extrapolation =====

@@ -442,9 +442,14 @@ public class TCodeService : IDisposable
         var rawTimeMs = GetExtrapolatedTimeMs();
         var currentTimeMs = rawTimeMs - _offsetMs;
 
-        // Interval for TCode I parameter: actual elapsed time in ms
-        var intervalMs = (int)Math.Floor(elapsedSec * 1000.0 + 0.75);
-        intervalMs = Math.Max(1, intervalMs);
+        // Interval for TCode I parameter: actual elapsed time in ms,
+        // scaled inversely by output rate ratio so higher rates produce
+        // snappier servo response and lower rates produce smoother motion.
+        // At 100 Hz (baseline): scale = 1.0 → I ≈ 10ms
+        // At 200 Hz: scale = 0.5 → I ≈ 2–3ms (device snaps to positions faster)
+        // At  50 Hz: scale = 2.0 → I ≈ 40ms  (device takes longer to reach targets)
+        var rateScale = 100.0 / _outputRateHz;
+        var intervalMs = (int)Math.Max(1, Math.Floor(elapsedSec * 1000.0 * rateScale + 0.75));
 
         var parts = new List<string>();
 
@@ -589,6 +594,16 @@ public class TCodeService : IDisposable
             if (_isPlaying && _scripts.TryGetValue(config.Id, out var script))
             {
                 var position = _interpolation.GetPosition(script, currentTimeMs, config.Id);
+
+                // Scale position by output rate ratio so the slider doubles as a
+                // speed control: higher rates amplify motion away from center (50)
+                // making the device travel more distance per tick = faster.
+                // 100 Hz (default) = 1.0× (unchanged), 200 Hz = 2.0× (amplified),
+                // 30 Hz = 0.3× (dampened toward center).
+                var speedMultiplier = _outputRateHz / 100.0;
+                position = 50.0 + (position - 50.0) * speedMultiplier;
+                position = Math.Clamp(position, 0, 100);
+
                 var tcodeValue = ApplyPositionOffset(config, PositionToTCode(config, position));
 
                 if (IsDirty(config.Id, tcodeValue))

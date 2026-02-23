@@ -50,7 +50,10 @@
       }
     ],
     "fileIcons": {
-      ".funscript": "Assets/Icons/funscript-stroke.png"
+      ".funscript": "Assets/Icons/funscript-stroke.png",
+      ".twist.funscript": "Assets/Icons/funscript-twist.png",
+      ".roll.funscript": "Assets/Icons/funscript-roll.png",
+      ".pitch.funscript": "Assets/Icons/funscript-pitch.png"
     },
     "settings": [
       {
