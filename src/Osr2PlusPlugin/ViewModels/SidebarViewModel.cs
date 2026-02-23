@@ -37,6 +37,11 @@ public class SidebarViewModel : INotifyPropertyChanged
     /// </summary>
     internal Func<ConnectionMode, int, string, int, (ITransportService? transport, bool success)> TransportFactory { get; set; }
 
+    /// <summary>
+    /// Factory for listing available COM ports. Internal for test injection.
+    /// </summary>
+    internal Func<string[]> PortLister { get; set; } = SerialTransportService.ListPorts;
+
     private static (ITransportService? transport, bool success) DefaultTransportFactory(
         ConnectionMode mode, int udpPort, string comPort, int baudRate)
     {
@@ -337,7 +342,7 @@ public class SidebarViewModel : INotifyPropertyChanged
         AvailableComPorts.Clear();
         try
         {
-            foreach (var port in SerialTransportService.ListPorts())
+            foreach (var port in PortLister())
                 AvailableComPorts.Add(port);
         }
         catch
@@ -346,11 +351,9 @@ public class SidebarViewModel : INotifyPropertyChanged
         }
 
         // Re-select the previously selected port if still available
-        if (!string.IsNullOrEmpty(_selectedComPort) && !AvailableComPorts.Contains(_selectedComPort))
+        if (string.IsNullOrEmpty(_selectedComPort) && AvailableComPorts.Count > 0)
         {
-            // Previously selected port is no longer available
-            if (AvailableComPorts.Count > 0)
-                SelectedComPort = AvailableComPorts[0];
+            SelectedComPort = AvailableComPorts[0];
         }
     }
 

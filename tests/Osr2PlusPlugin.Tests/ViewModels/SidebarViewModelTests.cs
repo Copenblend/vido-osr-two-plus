@@ -33,7 +33,8 @@ public class SidebarViewModelTests : IDisposable
 
         _sut = new SidebarViewModel(_tcode, _mockSettings.Object);
 
-        // Inject test transport factory
+        // Inject test stubs to avoid real hardware dependencies
+        _sut.PortLister = () => Array.Empty<string>();
         _sut.TransportFactory = (mode, port, comPort, baud) => (_mockTransport, true);
     }
 
