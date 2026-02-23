@@ -11,6 +11,8 @@ Context/
 *.userosscache
 *.sln.docstates
 *.code-workspace
+*.csx
+*.zip
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
