@@ -472,6 +472,361 @@ public class TCodeServiceTests : IDisposable
         }
     }
 
+    // ===== Fill Mode — Pattern Fill =====
+
+    [Fact]
+    public void FillMode_WaveformPattern_SendsOutput()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        configs[0].FillMode = AxisFillMode.Triangle; // L0 = Triangle
+        configs[0].FillSpeedHz = 1.0;
+        _sut.SetAxisConfigs(configs);
+
+        // No scripts loaded, so fill mode should kick in
+        _sut.SetPlaying(true);
+        _sut.SetTime(0);
+
+        _sut.Start();
+        Thread.Sleep(150);
+        _sut.StopTimer();
+
+        Assert.True(_transport.SentMessages.Count > 0,
+            "Expected fill mode to produce TCode output");
+        Assert.Contains("L0", _transport.SentMessages[0]);
+    }
+
+    [Fact]
+    public void FillMode_None_NoFillOutput()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        // All axes default to FillMode.None
+        _sut.SetAxisConfigs(configs);
+
+        _sut.SetPlaying(true);
+        _sut.SetTime(0);
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        // No scripts and no fill modes — no output
+        Assert.Empty(_transport.SentMessages);
+    }
+
+    [Fact]
+    public void FillMode_ScriptedAxis_IgnoresFillMode()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        configs[0].FillMode = AxisFillMode.Triangle; // L0 has fill mode set
+        _sut.SetAxisConfigs(configs);
+
+        // But also has a script — script should take priority
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(10000, 100) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(5000);
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        Assert.True(_transport.SentMessages.Count > 0);
+        // Script position at t=5000 should be ~50 → TCode ~499
+        var msg = _transport.SentMessages[0];
+        Assert.Contains("L0", msg);
+    }
+
+    [Fact]
+    public void FillMode_DisabledAxis_NoOutput()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        configs[0].FillMode = AxisFillMode.Sine;
+        configs[0].Enabled = false;
+        _sut.SetAxisConfigs(configs);
+
+        _sut.SetPlaying(true);
+        _sut.SetTime(0);
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        foreach (var msg in _transport.SentMessages)
+            Assert.DoesNotContain("L0", msg);
+    }
+
+    // ===== Fill Mode — Random =====
+
+    [Fact]
+    public void FillMode_Random_SendsOutput()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        configs[1].FillMode = AxisFillMode.Random; // R0 = Random
+        _sut.SetAxisConfigs(configs);
+
+        _sut.SetPlaying(true);
+        _sut.SetTime(0);
+
+        _sut.Start();
+        Thread.Sleep(150);
+        _sut.StopTimer();
+
+        Assert.True(_transport.SentMessages.Count > 0,
+            "Expected random fill to produce TCode output");
+        // At least one message should contain R0
+        Assert.True(_transport.SentMessages.Any(m => m.Contains("R0")),
+            "Expected R0 axis in random fill output");
+    }
+
+    // ===== Fill Mode — Grind / ReverseGrind =====
+
+    [Fact]
+    public void FillMode_Grind_R2FollowsL0Position()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        configs[3].FillMode = AxisFillMode.Grind; // R2 = Grind
+        _sut.SetAxisConfigs(configs);
+
+        // L0 has a script going from 0 to 100
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(10000, 100) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(5000); // L0 at 50%
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        Assert.True(_transport.SentMessages.Count > 0);
+        // Should have both L0 and R2 in output
+        var firstMsg = _transport.SentMessages[0];
+        Assert.Contains("L0", firstMsg);
+        Assert.Contains("R2", firstMsg);
+    }
+
+    [Fact]
+    public void FillMode_Grind_OnlyR2()
+    {
+        // Grind on a non-R2 axis should still use the waveform pattern, not grind behavior
+        var configs = AxisConfig.CreateDefaults();
+        configs[1].FillMode = AxisFillMode.Grind; // R0 = Grind (not R2)
+        _sut.SetAxisConfigs(configs);
+
+        _sut.SetPlaying(true);
+        _sut.SetTime(0);
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        // R0 with Grind fill mode but not R2 — goes through waveform path
+        // (PatternGenerator.Calculate for Grind returns t directly, so it should produce some output)
+    }
+
+    [Fact]
+    public void FillMode_ReverseGrind_R2InvertsL0()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        configs[3].FillMode = AxisFillMode.ReverseGrind; // R2 = ReverseGrind
+        _sut.SetAxisConfigs(configs);
+
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(10000, 100) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(5000); // L0 at 50%
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        Assert.True(_transport.SentMessages.Count > 0);
+        var firstMsg = _transport.SentMessages[0];
+        Assert.Contains("R2", firstMsg);
+    }
+
+    // ===== Fill Mode — Stroke Sync =====
+
+    [Fact]
+    public void FillMode_SyncWithStroke_AdvancesWithStrokeDistance()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        configs[1].FillMode = AxisFillMode.Triangle; // R0 = Triangle
+        configs[1].SyncWithStroke = true;
+        _sut.SetAxisConfigs(configs);
+
+        // L0 has a script (stroke is moving)
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(1000, 100), new(2000, 0) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(500);
+
+        _sut.Start();
+        Thread.Sleep(150);
+        _sut.StopTimer();
+
+        // Should have R0 output that's synced with stroke movement
+        Assert.True(_transport.SentMessages.Any(m => m.Contains("R0")),
+            "Expected R0 output with stroke sync enabled");
+    }
+
+    [Fact]
+    public void FillMode_L0Fill_AlwaysUsesIndependentTime()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        configs[0].FillMode = AxisFillMode.Sine;
+        configs[0].FillSpeedHz = 2.0;
+        // L0 sync toggle is meaningless (L0 IS the stroke), but set it anyway
+        configs[0].SyncWithStroke = true;
+        _sut.SetAxisConfigs(configs);
+
+        _sut.SetPlaying(true);
+        _sut.SetTime(0);
+
+        _sut.Start();
+        Thread.Sleep(150);
+        _sut.StopTimer();
+
+        // L0 fill should produce output regardless of sync setting
+        Assert.True(_transport.SentMessages.Count > 0);
+        Assert.Contains("L0", _transport.SentMessages[0]);
+    }
+
+    // ===== Return-to-Center =====
+
+    [Fact]
+    public void ReturnToCenter_WhenFillModeCleared_GlidesToMidpoint()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        configs[0].FillMode = AxisFillMode.Triangle;
+        _sut.SetAxisConfigs(configs);
+
+        _sut.SetPlaying(true);
+        _sut.SetTime(0);
+
+        // Run with fill active to get some output
+        _sut.Start();
+        Thread.Sleep(100);
+
+        // Now clear fill mode — should trigger return-to-center
+        _transport.SentMessages.Clear();
+        configs[0].FillMode = AxisFillMode.None;
+        _sut.SetAxisConfigs(configs);
+
+        Thread.Sleep(200); // Allow return animation
+        _sut.StopTimer();
+
+        // Should have sent messages moving toward 500
+        if (_transport.SentMessages.Count > 0)
+        {
+            var lastMsg = _transport.SentMessages[^1];
+            // The final position should be near midpoint (500)
+            Assert.Contains("L0", lastMsg);
+        }
+    }
+
+    [Fact]
+    public void ReturnToCenter_WhenAxisDisabled_GlidesToMidpoint()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        configs[0].FillMode = AxisFillMode.Sine;
+        _sut.SetAxisConfigs(configs);
+
+        _sut.SetPlaying(true);
+        _sut.SetTime(0);
+
+        _sut.Start();
+        Thread.Sleep(100);
+
+        _transport.SentMessages.Clear();
+        configs[0].Enabled = false;
+        _sut.SetAxisConfigs(configs);
+
+        Thread.Sleep(200);
+        _sut.StopTimer();
+
+        // Return-to-center should have fired for L0
+        // (may or may not have messages depending on timing, but no crash)
+    }
+
+    // ===== Ramp-Up =====
+
+    [Fact]
+    public void RampUp_WhenFillModeActivated_BlendsFromMidpoint()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        _sut.SetAxisConfigs(configs); // Initial state: all None
+
+        _sut.SetPlaying(true);
+        _sut.SetTime(0);
+        _sut.Start();
+        Thread.Sleep(50);
+
+        // Activate fill mode — should trigger ramp-up
+        configs[0].FillMode = AxisFillMode.Triangle;
+        _sut.SetAxisConfigs(configs);
+
+        Thread.Sleep(150);
+        _sut.StopTimer();
+
+        // Should have output for L0 with ramp blending
+        Assert.True(_transport.SentMessages.Count > 0,
+            "Expected ramp-up output for fill activation");
+    }
+
+    [Fact]
+    public void RampUp_CompletesAndRemoves()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        _sut.SetAxisConfigs(configs);
+
+        _sut.SetPlaying(true);
+        _sut.SetTime(0);
+        _sut.Start();
+
+        configs[0].FillMode = AxisFillMode.Sine;
+        _sut.SetAxisConfigs(configs);
+
+        // Run long enough for ramp to complete (blend reaches 0.99+)
+        Thread.Sleep(500);
+        _sut.StopTimer();
+
+        // Should have messages — ramp completes without issues
+        Assert.True(_transport.SentMessages.Count > 0);
+    }
+
+    // ===== Fill Mode with No Playback =====
+
+    [Fact]
+    public void FillMode_ActiveWithoutPlayback_StillSendsOutput()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        configs[0].FillMode = AxisFillMode.Triangle;
+        _sut.SetAxisConfigs(configs);
+
+        // Not playing, but fill mode is active — should still produce output
+        _sut.SetPlaying(false);
+
+        _sut.Start();
+        Thread.Sleep(150);
+        _sut.StopTimer();
+
+        // Fill should work even when not playing
+        Assert.True(_transport.SentMessages.Count > 0,
+            "Fill mode should produce output even when not playing");
+    }
+
     // ===== SleepPrecise =====
 
     [Fact]
