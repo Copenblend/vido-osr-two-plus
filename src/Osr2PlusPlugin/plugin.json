@@ -10,6 +10,7 @@
   "pluginClass": "Osr2PlusPlugin.Osr2PlusPlugin",
   "minVidoVersion": "0.1.0",
   "tags": ["osr2", "tcode", "funscript", "stroker", "haptics"],
+  "icon": "Assets/OSR2-plus-plugin.png",
   "contributes": {
     "sidebar": [
       {

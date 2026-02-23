@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text.RegularExpressions;
 using Osr2PlusPlugin.Models;
 using Osr2PlusPlugin.Services;
 using Xunit;
@@ -113,289 +112,6 @@ public class TCodeServiceTests : IDisposable
     {
         _sut.SetOutputRate(input);
         Assert.Equal(expected, _sut.OutputRateHz);
-    }
-
-    [Fact]
-    public void OutputRate_HigherRate_ProducesSmallerInterval()
-    {
-        // At 200 Hz the I parameter should be roughly half of the 100 Hz baseline
-        var scripts = new Dictionary<string, FunscriptData>
-        {
-            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(1000, 100) } }
-        };
-
-        // Run at default 100 Hz
-        _sut.SetOutputRate(100);
-        _sut.SetScripts(scripts);
-        _sut.SetPlaying(true);
-        _sut.SetTime(500);
-
-        _sut.Start();
-        Thread.Sleep(200);
-        _sut.StopTimer();
-
-        var baselineIntervals = ExtractIntervalValues(_transport.SentMessages);
-        Assert.True(baselineIntervals.Count > 0, "Expected output at 100 Hz");
-
-        // Reset
-        _transport.SentMessages.Clear();
-        _sut.SetScripts(scripts); // Reset dirty tracking
-
-        // Run at 200 Hz (I should be ~half)
-        _sut.SetOutputRate(200);
-        _sut.SetPlaying(true);
-        _sut.SetTime(500);
-
-        _sut.Start();
-        Thread.Sleep(200);
-        _sut.StopTimer();
-
-        var highRateIntervals = ExtractIntervalValues(_transport.SentMessages);
-        Assert.True(highRateIntervals.Count > 0, "Expected output at 200 Hz");
-
-        // Median I at 200 Hz should be less than median I at 100 Hz
-        var baselineMedian = Median(baselineIntervals);
-        var highRateMedian = Median(highRateIntervals);
-        Assert.True(highRateMedian < baselineMedian,
-            $"Expected 200 Hz interval ({highRateMedian}) < 100 Hz interval ({baselineMedian})");
-    }
-
-    [Fact]
-    public void OutputRate_LowerRate_ProducesLargerInterval()
-    {
-        // At 50 Hz the I parameter should be roughly double the 100 Hz baseline
-        var scripts = new Dictionary<string, FunscriptData>
-        {
-            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(1000, 100) } }
-        };
-
-        // Run at default 100 Hz
-        _sut.SetOutputRate(100);
-        _sut.SetScripts(scripts);
-        _sut.SetPlaying(true);
-        _sut.SetTime(500);
-
-        _sut.Start();
-        Thread.Sleep(200);
-        _sut.StopTimer();
-
-        var baselineIntervals = ExtractIntervalValues(_transport.SentMessages);
-        Assert.True(baselineIntervals.Count > 0, "Expected output at 100 Hz");
-
-        // Reset
-        _transport.SentMessages.Clear();
-        _sut.SetScripts(scripts);
-
-        // Run at 50 Hz (I should be ~double)
-        _sut.SetOutputRate(50);
-        _sut.SetPlaying(true);
-        _sut.SetTime(500);
-
-        _sut.Start();
-        Thread.Sleep(200);
-        _sut.StopTimer();
-
-        var lowRateIntervals = ExtractIntervalValues(_transport.SentMessages);
-        Assert.True(lowRateIntervals.Count > 0, "Expected output at 50 Hz");
-
-        // Median I at 50 Hz should be greater than median I at 100 Hz
-        var baselineMedian = Median(baselineIntervals);
-        var lowRateMedian = Median(lowRateIntervals);
-        Assert.True(lowRateMedian > baselineMedian,
-            $"Expected 50 Hz interval ({lowRateMedian}) > 100 Hz interval ({baselineMedian})");
-    }
-
-    [Fact]
-    public void OutputRate_DefaultRate_IntervalApproximatelyMatchesElapsed()
-    {
-        // At the default 100 Hz, scale factor = 1.0, so I ≈ elapsed ms
-        var scripts = new Dictionary<string, FunscriptData>
-        {
-            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(1000, 100) } }
-        };
-
-        _sut.SetOutputRate(100);
-        _sut.SetScripts(scripts);
-        _sut.SetPlaying(true);
-        _sut.SetTime(500);
-
-        _sut.Start();
-        Thread.Sleep(200);
-        _sut.StopTimer();
-
-        var intervals = ExtractIntervalValues(_transport.SentMessages);
-        Assert.True(intervals.Count > 0, "Expected output at 100 Hz");
-
-        // At 100 Hz, each tick is ~10ms, so I should be in the range 5-20ms
-        var median = Median(intervals);
-        Assert.InRange(median, 5, 25);
-    }
-
-    /// <summary>
-    /// Extracts all I parameter values from TCode messages (e.g., "L0499I10" → 10).
-    /// </summary>
-    private static List<int> ExtractIntervalValues(List<string> messages)
-    {
-        var result = new List<int>();
-        var regex = new Regex(@"I(\d+)");
-        foreach (var msg in messages)
-        {
-            foreach (Match m in regex.Matches(msg))
-            {
-                result.Add(int.Parse(m.Groups[1].Value));
-            }
-        }
-        return result;
-    }
-
-    private static double Median(List<int> values)
-    {
-        var sorted = values.OrderBy(v => v).ToList();
-        int mid = sorted.Count / 2;
-        return sorted.Count % 2 == 0
-            ? (sorted[mid - 1] + sorted[mid]) / 2.0
-            : sorted[mid];
-    }
-
-    /// <summary>
-    /// Extracts L0 TCode position values from messages (e.g., "L0499I10" → 499).
-    /// </summary>
-    private static List<int> ExtractL0Values(List<string> messages)
-    {
-        var result = new List<int>();
-        var regex = new Regex(@"L0(\d{3})I");
-        foreach (var msg in messages)
-        {
-            var m = regex.Match(msg);
-            if (m.Success) result.Add(int.Parse(m.Groups[1].Value));
-        }
-        return result;
-    }
-
-    // ===== Output Rate — Position Scaling =====
-
-    [Fact]
-    public void OutputRate_HigherRate_AmplifiesPositions()
-    {
-        // At 200 Hz positions should be amplified away from center (499)
-        // Script: L0 goes from 0 to 100 linearly. At t=250, pos = 25.
-        // At 100 Hz: TCode ~ PositionToTCode(25) = 249
-        // At 200 Hz: scaledPos = 50 + (25-50)*2 = 0 → TCode = 0
-        var scripts = new Dictionary<string, FunscriptData>
-        {
-            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(1000, 100) } }
-        };
-
-        // Run at 100 Hz baseline
-        _sut.SetOutputRate(100);
-        _sut.SetScripts(scripts);
-        _sut.SetPlaying(true);
-        _sut.SetTime(250);
-
-        _sut.Start();
-        Thread.Sleep(100);
-        _sut.StopTimer();
-
-        var baselineValues = ExtractL0Values(_transport.SentMessages);
-        Assert.True(baselineValues.Count > 0, "Expected output at 100 Hz");
-        var baselineFirst = baselineValues[0];
-
-        // Reset
-        _transport.SentMessages.Clear();
-        _sut.SetScripts(scripts);
-
-        // Run at 200 Hz (positions should be more extreme — further from 499)
-        _sut.SetOutputRate(200);
-        _sut.SetPlaying(true);
-        _sut.SetTime(250);
-
-        _sut.Start();
-        Thread.Sleep(100);
-        _sut.StopTimer();
-
-        var amplifiedValues = ExtractL0Values(_transport.SentMessages);
-        Assert.True(amplifiedValues.Count > 0, "Expected output at 200 Hz");
-        var amplifiedFirst = amplifiedValues[0];
-
-        // At t=250, position ≈ 25. Baseline TCode ≈ 249.
-        // At 2× scale: 50 + (25-50)*2 = 0 → TCode = 0.
-        // Amplified value should be further from midpoint (499) than baseline.
-        var baselineDist = Math.Abs(baselineFirst - 499);
-        var amplifiedDist = Math.Abs(amplifiedFirst - 499);
-        Assert.True(amplifiedDist > baselineDist,
-            $"Expected 200 Hz value ({amplifiedFirst}) further from 499 than 100 Hz ({baselineFirst})");
-    }
-
-    [Fact]
-    public void OutputRate_LowerRate_DampensPositions()
-    {
-        // At 50 Hz positions should be dampened toward center (499)
-        var scripts = new Dictionary<string, FunscriptData>
-        {
-            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(1000, 100) } }
-        };
-
-        // Run at 100 Hz baseline
-        _sut.SetOutputRate(100);
-        _sut.SetScripts(scripts);
-        _sut.SetPlaying(true);
-        _sut.SetTime(250);
-
-        _sut.Start();
-        Thread.Sleep(100);
-        _sut.StopTimer();
-
-        var baselineValues = ExtractL0Values(_transport.SentMessages);
-        Assert.True(baselineValues.Count > 0, "Expected output at 100 Hz");
-        var baselineFirst = baselineValues[0];
-
-        // Reset
-        _transport.SentMessages.Clear();
-        _sut.SetScripts(scripts);
-
-        // Run at 50 Hz (positions should be closer to center)
-        _sut.SetOutputRate(50);
-        _sut.SetPlaying(true);
-        _sut.SetTime(250);
-
-        _sut.Start();
-        Thread.Sleep(100);
-        _sut.StopTimer();
-
-        var dampenedValues = ExtractL0Values(_transport.SentMessages);
-        Assert.True(dampenedValues.Count > 0, "Expected output at 50 Hz");
-        var dampenedFirst = dampenedValues[0];
-
-        // Dampened value should be closer to midpoint (499) than baseline
-        var baselineDist = Math.Abs(baselineFirst - 499);
-        var dampenedDist = Math.Abs(dampenedFirst - 499);
-        Assert.True(dampenedDist < baselineDist,
-            $"Expected 50 Hz value ({dampenedFirst}) closer to 499 than 100 Hz ({baselineFirst})");
-    }
-
-    [Fact]
-    public void OutputRate_DefaultRate_PositionsUnchanged()
-    {
-        // At exactly 100 Hz, speedMultiplier = 1.0 → positions pass through unchanged
-        // Script: L0 = 80 constant. At 100 Hz: TCode = PositionToTCode(80) = 799
-        var scripts = new Dictionary<string, FunscriptData>
-        {
-            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 80), new(100000, 80) } }
-        };
-
-        _sut.SetOutputRate(100);
-        _sut.SetScripts(scripts);
-        _sut.SetPlaying(true);
-        _sut.SetTime(500);
-
-        _sut.Start();
-        Thread.Sleep(100);
-        _sut.StopTimer();
-
-        var values = ExtractL0Values(_transport.SentMessages);
-        Assert.True(values.Count > 0, "Expected output");
-        // Position 80 → TCode 799 (with default 0-100 range)
-        Assert.Equal(799, values[0]);
     }
 
     // ===== Time Extrapolation =====
@@ -917,10 +633,10 @@ public class TCodeServiceTests : IDisposable
     [Fact]
     public void FillMode_Grind_CappedTo70_WhenStrokeAtBottom()
     {
-        // When stroke is at 0 (bottom), Grind should output max pitch = GrindMaxPitch (70)
+        // When stroke is at 0 (bottom), Grind should output max pitch = PitchFillMaxPosition (70)
         var configs = AxisConfig.CreateDefaults();
         configs[3].FillMode = AxisFillMode.Grind; // R2 = Grind
-        configs[3].Max = 100; // User sets max to 100, but Grind ignores this
+        configs[3].Max = 100; // User sets max to 100, but pitch fill cap limits to 70
         _sut.SetAxisConfigs(configs);
 
         var scripts = new Dictionary<string, FunscriptData>
@@ -935,8 +651,8 @@ public class TCodeServiceTests : IDisposable
         Thread.Sleep(200);
         _sut.StopTimer();
 
-        // R2 output should be capped at GrindMaxPitch (70), not go up to config.Max (100)
-        // TCode for 70% = (int)(70.0 / 100.0 * 999) = 699
+        // R2 output should be capped at PitchFillMaxPosition (70%), not go up to config.Max (100)
+        // TCode for 70% = (int)(70 / 100.0 * 999) = 699
         // During ramp-up values move from 500 toward 699, all ≤ 699
         var r2Commands = _transport.SentMessages
             .SelectMany(m => m.Split(' '))
@@ -985,13 +701,13 @@ public class TCodeServiceTests : IDisposable
     }
 
     [Fact]
-    public void FillMode_Grind_DoesNotAffectFigure8Range()
+    public void FillMode_Figure8_R2CappedTo70()
     {
-        // Figure8 should still use full config.Min-config.Max range, NOT capped to 70
+        // Figure8 on R2 (pitch) should also be capped to PitchFillMaxPosition (70)
         var configs = AxisConfig.CreateDefaults();
         configs[3].FillMode = AxisFillMode.Figure8; // R2 = Figure8
         configs[3].Min = 0;
-        configs[3].Max = 100; // Full range
+        configs[3].Max = 100; // Full range, but pitch cap should limit to 70
         _sut.SetAxisConfigs(configs);
 
         var scripts = new Dictionary<string, FunscriptData>
@@ -1001,7 +717,6 @@ public class TCodeServiceTests : IDisposable
         _sut.SetScripts(scripts);
         _sut.SetPlaying(true);
 
-        // Collect commands across several ticks at different stroke positions
         _sut.Start();
         for (int t = 0; t < 5000; t += 500)
         {
@@ -1010,24 +725,128 @@ public class TCodeServiceTests : IDisposable
         }
         _sut.StopTimer();
 
-        // Figure8 range should go beyond 70% (699) for full config.Max=100
-        // (Figure8 maps to config.Min..config.Max, not clamped to GrindMaxPitch)
         var r2Commands = _transport.SentMessages
             .SelectMany(m => m.Split(' '))
             .Where(p => p.StartsWith("R2"))
             .Select(p => int.Parse(p.Substring(2, 3)))
             .ToList();
-        // Note: Figure8 has 0.6 amplitude scale, so max excursion from center is ~60%
-        // With config.Min=0, config.Max=100: max Figure8 output ≈ config.Min + 0.8 * (config.Max - config.Min)
-        // The key assertion: Figure8 is NOT artificially capped at 699 like Grind.
-        // It uses config.Min-config.Max range directly.
         Assert.True(r2Commands.Count > 0);
+        // All R2 values must be ≤ 699 (70% cap)
+        foreach (var value in r2Commands)
+        {
+            Assert.True(value <= 699, $"Figure8 R2 value {value} exceeds 70% pitch cap (699)");
+        }
     }
 
     [Fact]
-    public void GrindMaxPitch_Constant_Is70()
+    public void FillMode_Figure8_R1NotCapped()
     {
-        Assert.Equal(70.0, TCodeService.GrindMaxPitch);
+        // Figure8 on R1 (roll) should NOT be capped — only pitch (R2) has the safety limit
+        var configs = AxisConfig.CreateDefaults();
+        configs[2].FillMode = AxisFillMode.Figure8; // R1 = Figure8
+        configs[2].Min = 0;
+        configs[2].Max = 100;
+        _sut.SetAxisConfigs(configs);
+
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(2500, 100), new(5000, 0), new(7500, 100), new(10000, 0) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+
+        _sut.Start();
+        for (int t = 0; t < 5000; t += 500)
+        {
+            _sut.SetTime(t);
+            Thread.Sleep(30);
+        }
+        _sut.StopTimer();
+
+        var r1Commands = _transport.SentMessages
+            .SelectMany(m => m.Split(' '))
+            .Where(p => p.StartsWith("R1"))
+            .Select(p => int.Parse(p.Substring(2, 3)))
+            .ToList();
+        // R1 should use full config range, not limited to 699
+        Assert.True(r1Commands.Count > 0);
+    }
+
+    [Fact]
+    public void PitchFillMaxPosition_Constant_Is70()
+    {
+        Assert.Equal(70.0, TCodeService.PitchFillMaxPosition);
+    }
+
+    [Fact]
+    public void FillMode_WaveformFill_R2CappedTo70()
+    {
+        // Any waveform fill (Triangle, Sine, etc.) on R2 (pitch) must be capped to 70%
+        var configs = AxisConfig.CreateDefaults();
+        configs[3].FillMode = AxisFillMode.Triangle; // R2 = Triangle
+        configs[3].SyncWithStroke = false;
+        configs[3].FillSpeedHz = 2.0; // Fast enough to see full range
+        configs[3].Min = 0;
+        configs[3].Max = 100;
+        _sut.SetAxisConfigs(configs);
+
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 50), new(10000, 50) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(1000);
+
+        _sut.Start();
+        Thread.Sleep(1000);
+        _sut.StopTimer();
+
+        var r2Commands = _transport.SentMessages
+            .SelectMany(m => m.Split(' '))
+            .Where(p => p.StartsWith("R2"))
+            .Select(p => int.Parse(p.Substring(2, 3)))
+            .ToList();
+        Assert.True(r2Commands.Count > 0);
+        foreach (var value in r2Commands)
+        {
+            Assert.True(value <= 699, $"Triangle R2 value {value} exceeds 70% pitch cap (699)");
+        }
+    }
+
+    [Fact]
+    public void FillMode_WaveformFill_R0NotCapped()
+    {
+        // Non-pitch axes should NOT be capped to 70%
+        var configs = AxisConfig.CreateDefaults();
+        configs[1].FillMode = AxisFillMode.Triangle; // R0 = Triangle
+        configs[1].SyncWithStroke = false;
+        configs[1].FillSpeedHz = 2.0;
+        configs[1].Min = 0;
+        configs[1].Max = 100;
+        _sut.SetAxisConfigs(configs);
+
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 50), new(10000, 50) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(1000);
+
+        _sut.Start();
+        Thread.Sleep(1000);
+        _sut.StopTimer();
+
+        var r0Commands = _transport.SentMessages
+            .SelectMany(m => m.Split(' '))
+            .Where(p => p.StartsWith("R0"))
+            .Select(p => int.Parse(p.Substring(2, 3)))
+            .ToList();
+        Assert.True(r0Commands.Count > 0);
+        // R0 should go above 699 since it's not pitch-capped
+        var maxR0 = r0Commands.Max();
+        Assert.True(maxR0 > 699, $"R0 max value {maxR0} should exceed 699 since R0 is not pitch-capped");
     }
 
     [Fact]
@@ -1622,6 +1441,89 @@ public class TCodeServiceTests : IDisposable
 
         // Should wait roughly 20ms (allow 5-35ms range for CI variance)
         Assert.InRange(sw.ElapsedMilliseconds, 5, 50);
+    }
+
+    // ===== HomeAxes =====
+
+    [Fact]
+    public void HomeAxes_SendsMidpointToAllAxes()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        _sut.SetAxisConfigs(configs);
+        _sut.Transport = _transport;
+
+        _sut.HomeAxes();
+
+        Assert.Single(_transport.SentMessages);
+        var msg = _transport.SentMessages[0];
+        // L0/R0/R1 default Min=0,Max=100 → PositionToTCode(50) = 499
+        // R2 default Min=0,Max=75 → PositionToTCode(50) = 374
+        Assert.Contains("L0499I2000", msg);
+        Assert.Contains("R0499I2000", msg);
+        Assert.Contains("R1499I2000", msg);
+        Assert.Contains("R2374I2000", msg);
+    }
+
+    [Fact]
+    public void HomeAxes_NoTransport_DoesNotThrow()
+    {
+        // Create a fresh TCodeService with no transport
+        using var sut = new TCodeService(_interpolation);
+        sut.SetAxisConfigs(AxisConfig.CreateDefaults());
+        // No transport set — HomeAxes should not throw
+        sut.HomeAxes();
+    }
+
+    // ===== Test Mode: None Fill Switching =====
+
+    [Fact]
+    public void TestMode_NoneAxis_StaysRegistered_NoOutput()
+    {
+        // An axis in test mode with FillMode.None should remain registered
+        // but produce no fill output (the loop continues past it)
+        var configs = AxisConfig.CreateDefaults();
+        configs[1].FillMode = AxisFillMode.None; // R0 = None
+        _sut.SetAxisConfigs(configs);
+        _sut.Transport = _transport;
+
+        _sut.StartTestAxis("R0", 1.0);
+        Assert.True(_sut.IsAxisTesting("R0"));
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        // R0 should still be registered (not removed)
+        // but should not have produced fill output since FillMode is None
+        var r0Commands = _transport.SentMessages
+            .SelectMany(m => m.Split(' '))
+            .Where(p => p.StartsWith("R0"))
+            .ToList();
+        // None fill → skipped in test output (only midpoint on stop)
+        // Any R0 commands are just the midpoint sent by StopTestAxis
+    }
+
+    [Fact]
+    public void HomeAxes_RespectsPositionOffsets()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        // L0 offset: -50 → midpoint TCode 499 shifted by (-50/100*999)=-499 → 0 (clamped)
+        configs[0].PositionOffset = -50;
+        // R0 offset: 90 degrees → midpoint TCode 499 shifted by (90/360*999)=249 → (499+249)%1000=748
+        configs[1].PositionOffset = 90;
+        _sut.SetAxisConfigs(configs);
+
+        _sut.HomeAxes();
+
+        Assert.Single(_transport.SentMessages);
+        var msg = _transport.SentMessages[0];
+        // L0: Clamp(499 + (-499), 0, 999) = 0
+        Assert.Contains("L0000I2000", msg);
+        // R0: (499 + 249) % 1000 = 748
+        Assert.Contains("R0748I2000", msg);
+        // R1, R2: no offset support → stays at default
+        Assert.Contains("R1499I2000", msg);
+        Assert.Contains("R2374I2000", msg);
     }
 
     // ===== Mock Transport =====

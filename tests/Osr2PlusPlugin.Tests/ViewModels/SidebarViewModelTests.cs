@@ -400,12 +400,6 @@ public class SidebarViewModelTests : IDisposable
         Assert.Equal("OSR2+:Not Connected", _sut.StatusText);
     }
 
-    [Fact]
-    public void StatusTextColor_Initial_IsDim()
-    {
-        Assert.Equal("#808080", _sut.StatusTextColor);
-    }
-
     // ═══════════════════════════════════════════════════════
     //  StatusText — Connected (UDP)
     // ═══════════════════════════════════════════════════════
@@ -416,14 +410,6 @@ public class SidebarViewModelTests : IDisposable
         _sut.Connect();
 
         Assert.Equal("UDP:7777:Connected", _sut.StatusText);
-    }
-
-    [Fact]
-    public void StatusTextColor_Connected_IsGreen()
-    {
-        _sut.Connect();
-
-        Assert.Equal("#14CC00", _sut.StatusTextColor);
     }
 
     [Fact]
@@ -463,15 +449,6 @@ public class SidebarViewModelTests : IDisposable
     }
 
     [Fact]
-    public void StatusTextColor_Disconnected_IsRed()
-    {
-        _sut.Connect();
-        _sut.Disconnect();
-
-        Assert.Equal("#CC3333", _sut.StatusTextColor);
-    }
-
-    [Fact]
     public void StatusText_DisconnectedSerial_ShowsComDisconnected()
     {
         _sut.SelectedMode = ConnectionMode.Serial;
@@ -495,15 +472,6 @@ public class SidebarViewModelTests : IDisposable
         Assert.Equal("UDP:7777:Disconnected", _sut.StatusText);
     }
 
-    [Fact]
-    public void StatusTextColor_FailedConnect_IsRed()
-    {
-        _sut.TransportFactory = (_, _, _, _) => (null, false);
-        _sut.Connect();
-
-        Assert.Equal("#CC3333", _sut.StatusTextColor);
-    }
-
     // ═══════════════════════════════════════════════════════
     //  StatusText — Transport Drop
     // ═══════════════════════════════════════════════════════
@@ -515,15 +483,6 @@ public class SidebarViewModelTests : IDisposable
         _mockTransport.SimulateConnectionDrop();
 
         Assert.Equal("UDP:7777:Disconnected", _sut.StatusText);
-    }
-
-    [Fact]
-    public void StatusTextColor_TransportDrop_IsRed()
-    {
-        _sut.Connect();
-        _mockTransport.SimulateConnectionDrop();
-
-        Assert.Equal("#CC3333", _sut.StatusTextColor);
     }
 
     // ═══════════════════════════════════════════════════════
@@ -539,7 +498,6 @@ public class SidebarViewModelTests : IDisposable
         _sut.Connect();
 
         Assert.Contains(nameof(SidebarViewModel.StatusText), raised);
-        Assert.Contains(nameof(SidebarViewModel.StatusTextColor), raised);
     }
 
     [Fact]
@@ -552,7 +510,6 @@ public class SidebarViewModelTests : IDisposable
         _sut.Disconnect();
 
         Assert.Contains(nameof(SidebarViewModel.StatusText), raised);
-        Assert.Contains(nameof(SidebarViewModel.StatusTextColor), raised);
     }
 
     [Fact]
@@ -565,7 +522,6 @@ public class SidebarViewModelTests : IDisposable
         _sut.Connect();
 
         Assert.Contains(nameof(SidebarViewModel.StatusText), raised);
-        Assert.Contains(nameof(SidebarViewModel.StatusTextColor), raised);
     }
 
     // ═══════════════════════════════════════════════════════
@@ -595,12 +551,10 @@ public class SidebarViewModelTests : IDisposable
         // Connect via command
         _sut.ConnectCommand.Execute(null);
         Assert.Equal("UDP:7777:Connected", _sut.StatusText);
-        Assert.Equal("#14CC00", _sut.StatusTextColor);
 
         // Disconnect via command
         _sut.ConnectCommand.Execute(null);
         Assert.Equal("UDP:7777:Disconnected", _sut.StatusText);
-        Assert.Equal("#CC3333", _sut.StatusTextColor);
     }
 
     [Fact]
@@ -647,6 +601,29 @@ public class SidebarViewModelTests : IDisposable
     }
 
     // ===== Mock Transport =====
+
+    // ===== Homing on Connect =====
+
+    [Fact]
+    public void Connect_SendsHomingCommand_AllAxesToMidpoint()
+    {
+        // Set up axis configs on TCodeService so HomeAxes has something to send
+        var configs = AxisConfig.CreateDefaults();
+        _tcode.SetAxisConfigs(configs);
+
+        _sut.Connect();
+
+        Assert.True(_sut.IsConnected);
+        // HomeAxes should have sent a compound command with offset-adjusted midpoints
+        Assert.True(_mockTransport.SentMessages.Count >= 1, "Expected at least one homing message");
+        var homingMsg = _mockTransport.SentMessages[0];
+        // L0/R0/R1 default Min=0,Max=100 → PositionToTCode(50) = 499
+        // R2 default Min=0,Max=75 → PositionToTCode(50) = 374
+        Assert.Contains("L0499I2000", homingMsg);
+        Assert.Contains("R0499I2000", homingMsg);
+        Assert.Contains("R1499I2000", homingMsg);
+        Assert.Contains("R2374I2000", homingMsg);
+    }
 
     private class MockTransport : ITransportService
     {
