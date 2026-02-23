@@ -24,7 +24,8 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto"
+    <ScrollViewer Style="{StaticResource Osr2ScrollViewerStyle}"
+                  VerticalScrollBarVisibility="Auto"
                   HorizontalScrollBarVisibility="Disabled"
                   Background="{StaticResource PanelBackgroundBrush}">
         <StackPanel Margin="12,8,12,12">
