@@ -3,23 +3,80 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
              xmlns:skia="clr-namespace:SkiaSharp.Views.WPF;assembly=SkiaSharp.Views.WPF"
+             xmlns:models="clr-namespace:Osr2PlusPlugin.Models"
+             xmlns:vm="clr-namespace:Osr2PlusPlugin.ViewModels"
              mc:Ignorable="d"
              d:DesignHeight="200" d:DesignWidth="800"
              Background="Transparent">
-    <Grid>
-        <!-- SkiaSharp canvas for graph / heatmap rendering -->
-        <skia:SKElement x:Name="SkiaCanvas" PaintSurface="OnPaintSurface" />
 
-        <!-- Empty state overlay -->
-        <TextBlock x:Name="EmptyStateText"
-                   Text="No funscript loaded"
-                   Foreground="#CCCCCC"
-                   Opacity="0.4"
-                   FontSize="14"
-                   FontFamily="Segoe UI"
-                   HorizontalAlignment="Center"
-                   VerticalAlignment="Center"
-                   IsHitTestVisible="False" />
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="../Resources/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <!-- VisualizationMode enum values for ComboBox -->
+            <ObjectDataProvider x:Key="VisualizationModes"
+                                MethodName="GetValues"
+                                ObjectType="{x:Type sys:Enum}">
+                <ObjectDataProvider.MethodParameters>
+                    <x:Type TypeName="models:VisualizationMode" />
+                </ObjectDataProvider.MethodParameters>
+            </ObjectDataProvider>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ── Toolbar ──────────────────────────────────────── -->
+        <StackPanel Grid.Row="0"
+                    Orientation="Horizontal"
+                    Margin="8,4,8,2">
+
+            <TextBlock Text="Mode"
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       FontSize="11" FontFamily="Segoe UI"
+                       VerticalAlignment="Center"
+                       Margin="0,0,6,0" />
+            <ComboBox Style="{StaticResource Osr2ComboBoxStyle}"
+                      ItemContainerStyle="{StaticResource Osr2ComboBoxItemStyle}"
+                      ItemsSource="{Binding Source={StaticResource VisualizationModes}}"
+                      SelectedItem="{Binding SelectedMode}"
+                      Width="90" />
+
+            <TextBlock Text="Window"
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       FontSize="11" FontFamily="Segoe UI"
+                       VerticalAlignment="Center"
+                       Margin="16,0,6,0" />
+            <ComboBox Style="{StaticResource Osr2ComboBoxStyle}"
+                      ItemContainerStyle="{StaticResource Osr2ComboBoxItemStyle}"
+                      ItemsSource="{x:Static vm:VisualizerViewModel.WindowDurationLabels}"
+                      SelectedIndex="{Binding WindowDurationIndex}"
+                      Width="80" />
+        </StackPanel>
+
+        <!-- ── Canvas + Empty State ─────────────────────────── -->
+        <Grid Grid.Row="1">
+            <!-- SkiaSharp canvas for graph / heatmap rendering -->
+            <skia:SKElement x:Name="SkiaCanvas" PaintSurface="OnPaintSurface" />
+
+            <!-- Empty state overlay -->
+            <TextBlock x:Name="EmptyStateText"
+                       Text="No funscript loaded"
+                       Foreground="#CCCCCC"
+                       Opacity="0.4"
+                       FontSize="14"
+                       FontFamily="Segoe UI"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       IsHitTestVisible="False" />
+        </Grid>
     </Grid>
 </UserControl>
