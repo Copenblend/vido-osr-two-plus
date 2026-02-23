@@ -1,8 +1,271 @@
 <UserControl x:Class="Osr2PlusPlugin.Views.SidebarView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
-    <StackPanel Margin="16">
-        <TextBlock Text="OSR2+" FontSize="18" FontWeight="Bold" Foreground="White" />
-        <TextBlock Text="Plugin loaded successfully." Foreground="#999" Margin="0,8,0,0" />
-    </StackPanel>
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
+             xmlns:models="clr-namespace:Osr2PlusPlugin.Models"
+             xmlns:converters="clr-namespace:Osr2PlusPlugin.Converters">
+
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="../Resources/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <converters:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+
+            <!-- ConnectionMode enum values for ComboBox -->
+            <ObjectDataProvider x:Key="ConnectionModes"
+                                MethodName="GetValues"
+                                ObjectType="{x:Type sys:Enum}">
+                <ObjectDataProvider.MethodParameters>
+                    <x:Type TypeName="models:ConnectionMode" />
+                </ObjectDataProvider.MethodParameters>
+            </ObjectDataProvider>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled"
+                  Background="{StaticResource PanelBackgroundBrush}">
+        <StackPanel Margin="12,8,12,12">
+
+            <!-- ════════════════════════════════════════════════
+                 CONNECTION
+                 ════════════════════════════════════════════════ -->
+            <TextBlock Text="CONNECTION"
+                       Style="{StaticResource SectionLabelStyle}" />
+
+            <!-- Mode Selector -->
+            <TextBlock Text="Mode"
+                       Foreground="{StaticResource TextSecondaryBrush}"
+                       FontSize="11" FontFamily="Segoe UI"
+                       Margin="0,4,0,4" />
+            <ComboBox Style="{StaticResource Osr2ComboBoxStyle}"
+                      ItemContainerStyle="{StaticResource Osr2ComboBoxItemStyle}"
+                      ItemsSource="{Binding Source={StaticResource ConnectionModes}}"
+                      SelectedItem="{Binding SelectedMode}" />
+
+            <!-- ── UDP Section ─────────────────────────────── -->
+            <StackPanel Visibility="{Binding IsUdpMode, Converter={StaticResource BoolToVisibility}}"
+                        Margin="0,8,0,0">
+                <TextBlock Text="Port"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           FontSize="11" FontFamily="Segoe UI"
+                           Margin="0,0,0,4" />
+                <TextBox Style="{StaticResource Osr2TextBoxStyle}"
+                         Text="{Binding UdpPort, UpdateSourceTrigger=LostFocus}" />
+            </StackPanel>
+
+            <!-- ── Serial Section ──────────────────────────── -->
+            <StackPanel Visibility="{Binding IsSerialMode, Converter={StaticResource BoolToVisibility}}"
+                        Margin="0,8,0,0">
+                <!-- COM Port row -->
+                <TextBlock Text="COM Port"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           FontSize="11" FontFamily="Segoe UI"
+                           Margin="0,0,0,4" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ComboBox Grid.Column="0"
+                              Style="{StaticResource Osr2ComboBoxStyle}"
+                              ItemContainerStyle="{StaticResource Osr2ComboBoxItemStyle}"
+                              ItemsSource="{Binding AvailableComPorts}"
+                              SelectedItem="{Binding SelectedComPort}" />
+
+                    <!-- Refresh button — matches Vido plugin manager style -->
+                    <Button Grid.Column="1"
+                            Margin="4,0,0,0"
+                            Command="{Binding RefreshPortsCommand}"
+                            ToolTip="Refresh COM ports"
+                            Background="Transparent" BorderThickness="0"
+                            Cursor="Hand" Width="28" Height="28"
+                            VerticalAlignment="Center">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="RefreshBd" Background="Transparent"
+                                        CornerRadius="4" Width="28" Height="28">
+                                    <Path x:Name="RefreshIcon"
+                                          Data="M17.65,6.35A8,8 0 0,0 12,4a8,8 0 0,0-8,8 8,8 0 0,0,8,8 7.45,7.45 0 0,0,5.73-2.69l-1.55-1.55A5.49,5.49 0 0,1 12,18a6,6 0 0,1-6-6 6,6 0 0,1,6-6 5.96,5.96 0 0,1,4.24,1.76L13,11h7V4Z"
+                                          Fill="{StaticResource TextSecondaryBrush}"
+                                          Stretch="Uniform" Width="16" Height="16"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="RefreshBd" Property="Background"
+                                                Value="{StaticResource HoverBackgroundBrush}" />
+                                        <Setter TargetName="RefreshIcon" Property="Fill"
+                                                Value="{StaticResource TextPrimaryBrush}" />
+                                    </Trigger>
+                                    <Trigger Property="IsPressed" Value="True">
+                                        <Setter TargetName="RefreshBd" Property="Background"
+                                                Value="{StaticResource CardBorderBrush}" />
+                                    </Trigger>
+                                    <Trigger Property="IsEnabled" Value="False">
+                                        <Setter TargetName="RefreshBd" Property="Opacity" Value="0.5" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </Grid>
+
+                <!-- Baud Rate -->
+                <TextBlock Text="Baud Rate"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           FontSize="11" FontFamily="Segoe UI"
+                           Margin="0,8,0,4" />
+                <ComboBox Style="{StaticResource Osr2ComboBoxStyle}"
+                          ItemContainerStyle="{StaticResource Osr2ComboBoxItemStyle}"
+                          ItemsSource="{Binding AvailableBaudRates}"
+                          SelectedItem="{Binding SelectedBaudRate}" />
+            </StackPanel>
+
+            <!-- Connect / Disconnect Button -->
+            <Button x:Name="ConnectBtn"
+                    Command="{Binding ConnectCommand}"
+                    Content="{Binding ConnectButtonText}"
+                    HorizontalAlignment="Stretch"
+                    FontFamily="Segoe UI" FontSize="13"
+                    Foreground="White" Cursor="Hand"
+                    Padding="12,6" Margin="0,12,0,0">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Setter Property="Background" Value="{StaticResource ConnectButtonBrush}" />
+                        <Setter Property="Tag" Value="{StaticResource ConnectButtonHoverBrush}" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Button">
+                                    <Border x:Name="Bd"
+                                            Background="{TemplateBinding Background}"
+                                            CornerRadius="4"
+                                            Padding="{TemplateBinding Padding}"
+                                            SnapsToDevicePixels="True">
+                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Bd" Property="Background"
+                                                    Value="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}" />
+                                        </Trigger>
+                                        <Trigger Property="IsEnabled" Value="False">
+                                            <Setter Property="Opacity" Value="0.35" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsConnected}" Value="True">
+                                <Setter Property="Background" Value="{StaticResource DisconnectButtonBrush}" />
+                                <Setter Property="Tag" Value="{StaticResource DisconnectButtonHoverBrush}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+
+            <!-- ════════════════════════════════════════════════
+                 Divider
+                 ════════════════════════════════════════════════ -->
+            <Border Style="{StaticResource DividerStyle}" />
+
+            <!-- ════════════════════════════════════════════════
+                 OUTPUT
+                 ════════════════════════════════════════════════ -->
+            <TextBlock Text="OUTPUT RATE"
+                       Style="{StaticResource SectionLabelStyle}" />
+
+            <!-- Output Rate: description + slider + value -->
+            <TextBlock Foreground="{StaticResource TextSecondaryBrush}"
+                       FontSize="11" FontFamily="Segoe UI"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,6"
+                       Text="TCode commands per second sent to the device" />
+            <Grid Margin="0,0,0,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="50" />
+                </Grid.ColumnDefinitions>
+                <Slider Grid.Column="0"
+                        Style="{StaticResource Osr2SliderStyle}"
+                        Minimum="30" Maximum="200"
+                        Value="{Binding OutputRateHz}"
+                        TickFrequency="10"
+                        IsSnapToTickEnabled="True" />
+                <TextBlock Grid.Column="1"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           FontSize="12" FontFamily="Segoe UI">
+                    <Run Text="{Binding OutputRateHz, Mode=OneWay}" /><Run Text=" Hz" />
+                </TextBlock>
+            </Grid>
+
+            <!-- ════════════════════════════════════════════════
+                 Divider
+                 ════════════════════════════════════════════════ -->
+            <Border Style="{StaticResource DividerStyle}" />
+
+            <!-- ════════════════════════════════════════════════
+                 OFFSET
+                 ════════════════════════════════════════════════ -->
+            <TextBlock Text="GLOBAL OFFSET"
+                       Style="{StaticResource SectionLabelStyle}" />
+
+            <!-- Global Offset: description + slider + value -->
+            <TextBlock Foreground="{StaticResource TextSecondaryBrush}"
+                       FontSize="11" FontFamily="Segoe UI"
+                       TextWrapping="Wrap"
+                       Margin="0,0,0,6"
+                       Text="Shift funscript timing relative to video playback" />
+            <Grid Margin="0,0,0,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="50" />
+                </Grid.ColumnDefinitions>
+                <Slider Grid.Column="0"
+                        Style="{StaticResource Osr2SliderStyle}"
+                        Minimum="-500" Maximum="500"
+                        Value="{Binding GlobalOffsetMs}"
+                        TickFrequency="10"
+                        IsSnapToTickEnabled="True" />
+                <TextBlock Grid.Column="1"
+                           HorizontalAlignment="Right"
+                           VerticalAlignment="Center"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           FontSize="12" FontFamily="Segoe UI">
+                    <Run Text="{Binding GlobalOffsetMs, Mode=OneWay}" /><Run Text=" ms" />
+                </TextBlock>
+            </Grid>
+
+            <!-- ════════════════════════════════════════════════
+                 Divider
+                 ════════════════════════════════════════════════ -->
+            <Border Style="{StaticResource DividerStyle}" />
+
+            <!-- ════════════════════════════════════════════════
+                 PANELS
+                 ════════════════════════════════════════════════ -->
+            <TextBlock Text="PANELS"
+                       Style="{StaticResource SectionLabelStyle}" />
+
+            <Button Style="{StaticResource Osr2ButtonStyle}"
+                    Content="Show Axis Settings"
+                    Command="{Binding ShowAxisSettingsCommand}"
+                    HorizontalAlignment="Stretch"
+                    Margin="0,2" />
+
+            <Button Style="{StaticResource Osr2ButtonStyle}"
+                    Content="Show Funscript Visualizer"
+                    Command="{Binding ShowVisualizerCommand}"
+                    HorizontalAlignment="Stretch"
+                    Margin="0,2" />
+
+        </StackPanel>
+    </ScrollViewer>
 </UserControl>
