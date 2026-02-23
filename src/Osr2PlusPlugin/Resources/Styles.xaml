@@ -369,6 +369,55 @@
         </Setter>
     </Style>
 
+    <!-- ── Small Button (Open, etc.) ─────────────────────── -->
+    <Style x:Key="Osr2SmallButtonStyle" TargetType="Button" BasedOn="{StaticResource Osr2ButtonStyle}">
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Padding" Value="8,3" />
+    </Style>
+
+    <!-- ── Test Button (red when active, Tag-based hover) ── -->
+    <Style x:Key="Osr2TestButtonStyle" TargetType="Button">
+        <Setter Property="FontFamily" Value="Segoe UI" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="Background" Value="{StaticResource ButtonBackgroundBrush}" />
+        <Setter Property="Tag" Value="{StaticResource ButtonHoverBrush}" />
+        <Setter Property="Padding" Value="12,5" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{StaticResource CardBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background"
+                                    Value="{Binding Tag, RelativeSource={RelativeSource TemplatedParent}}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.35" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding IsTesting}" Value="True">
+                <Setter Property="Background" Value="{StaticResource DisconnectButtonBrush}" />
+                <Setter Property="Foreground" Value="White" />
+                <Setter Property="Tag" Value="{StaticResource DisconnectButtonHoverBrush}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
     <!-- ── Slider ─────────────────────────────────────────── -->
 
     <!-- Decrease (left of thumb) — filled accent bar -->
