@@ -7,6 +7,9 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
+    <InternalsVisibleTo Include="Osr2PlusPlugin.Tests" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Vido.Core" Version="0.2.0" />
     <PackageReference Include="System.IO.Ports" Version="8.*" />
     <PackageReference Include="SkiaSharp" Version="2.*" />
