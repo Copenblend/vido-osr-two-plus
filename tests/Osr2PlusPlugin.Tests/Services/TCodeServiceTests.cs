@@ -942,6 +942,248 @@ public class TCodeServiceTests : IDisposable
         Assert.DoesNotContain("L0000", msg); // Not unshifted zero
     }
 
+    // ===== Test Mode =====
+
+    [Fact]
+    public void StartTestAxis_SetsIsAxisTesting()
+    {
+        _sut.StartTestAxis("L0", 1.0);
+        Assert.True(_sut.IsAxisTesting("L0"));
+    }
+
+    [Fact]
+    public void IsAxisTesting_ReturnsFalseWhenNotTesting()
+    {
+        Assert.False(_sut.IsAxisTesting("L0"));
+    }
+
+    [Fact]
+    public void StopTestAxis_RampsDown_RaisesTestAxisStopped()
+    {
+        _sut.SetAxisConfigs(AxisConfig.CreateDefaults());
+        _sut.StartTestAxis("L0", 1.0);
+        _sut.Start();
+
+        // Let it run a few ticks to ramp up
+        Thread.Sleep(100);
+
+        string? stoppedAxisId = null;
+        _sut.TestAxisStopped += id => stoppedAxisId = id;
+
+        _sut.StopTestAxis("L0");
+
+        // Wait for ramp-down to complete (amplitude 50 → 0 at factor 0.02/tick)
+        // At 100Hz ~10ms/tick, factor 0.02: takes many ticks but exponential
+        // 50 * 0.98^n < 0.5 → n ≈ 230 ticks → ~2.3s. Wait up to 4s.
+        var timeout = Stopwatch.StartNew();
+        while (_sut.IsAxisTesting("L0") && timeout.ElapsedMilliseconds < 4000)
+            Thread.Sleep(20);
+
+        _sut.StopTimer();
+
+        Assert.False(_sut.IsAxisTesting("L0"));
+        Assert.Equal("L0", stoppedAxisId);
+    }
+
+    [Fact]
+    public void StopAllTestAxes_ClearsAllAndRaisesAllTestsStopped()
+    {
+        _sut.StartTestAxis("L0", 1.0);
+        _sut.StartTestAxis("R0", 2.0);
+
+        bool allStoppedFired = false;
+        _sut.AllTestsStopped += () => allStoppedFired = true;
+
+        _sut.StopAllTestAxes();
+
+        Assert.False(_sut.IsAxisTesting("L0"));
+        Assert.False(_sut.IsAxisTesting("R0"));
+        Assert.True(allStoppedFired);
+    }
+
+    [Fact]
+    public void StopAllTestAxes_DoesNotFireEvent_WhenNoTestAxes()
+    {
+        bool allStoppedFired = false;
+        _sut.AllTestsStopped += () => allStoppedFired = true;
+
+        _sut.StopAllTestAxes();
+
+        Assert.False(allStoppedFired);
+    }
+
+    [Fact]
+    public void SetPlaying_WithScripts_AutoStopsAllTestAxes()
+    {
+        _sut.StartTestAxis("L0", 1.0);
+        _sut.SetScripts(new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(1000, 100) } }
+        });
+
+        bool allStoppedFired = false;
+        _sut.AllTestsStopped += () => allStoppedFired = true;
+
+        _sut.SetPlaying(true);
+
+        Assert.False(_sut.IsAxisTesting("L0"));
+        Assert.True(allStoppedFired);
+    }
+
+    [Fact]
+    public void SetPlaying_WithoutScripts_DoesNotAutoStop()
+    {
+        _sut.StartTestAxis("L0", 1.0);
+        // No scripts loaded
+
+        _sut.SetPlaying(true);
+
+        Assert.True(_sut.IsAxisTesting("L0")); // Still testing
+    }
+
+    [Fact]
+    public void UpdateTestSpeed_ChangesTargetSpeed()
+    {
+        _sut.StartTestAxis("L0", 1.0);
+        _sut.UpdateTestSpeed("L0", 3.0);
+
+        // Verify axis is still testing (speed change doesn't stop it)
+        Assert.True(_sut.IsAxisTesting("L0"));
+    }
+
+    [Fact]
+    public void UpdateTestSpeed_ClampsToValidRange()
+    {
+        _sut.StartTestAxis("L0", 1.0);
+        // These should not throw
+        _sut.UpdateTestSpeed("L0", 0.01); // Below min, clamped to 0.1
+        _sut.UpdateTestSpeed("L0", 10.0); // Above max, clamped to 5.0
+        Assert.True(_sut.IsAxisTesting("L0"));
+    }
+
+    [Fact]
+    public void TestMode_ProducesOutput_WhenNotPlaying()
+    {
+        _sut.SetAxisConfigs(AxisConfig.CreateDefaults());
+        _sut.StartTestAxis("L0", 1.0);
+
+        _sut.Start();
+        Thread.Sleep(200); // Let a few ticks fire
+        _sut.StopTimer();
+
+        Assert.True(_transport.SentMessages.Count > 0, "Should produce TCode output during test mode");
+        Assert.All(_transport.SentMessages, msg => Assert.Contains("L0", msg));
+    }
+
+    [Fact]
+    public void TestMode_OutputOscillatesAroundMidpoint()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        _sut.SetAxisConfigs(configs);
+        _sut.StartTestAxis("L0", 2.0); // 2Hz — fast enough to see oscillation
+
+        _sut.Start();
+        Thread.Sleep(800); // Let it oscillate for a bit
+        _sut.StopTimer();
+
+        // Collect L0 values from sent messages
+        var l0Values = new List<int>();
+        foreach (var msg in _transport.SentMessages)
+        {
+            var parts = msg.TrimEnd('\n').Split(' ');
+            foreach (var part in parts)
+            {
+                if (part.StartsWith("L0") && part.Contains('I'))
+                {
+                    var valStr = part.Substring(2, part.IndexOf('I') - 2);
+                    if (int.TryParse(valStr, out var val))
+                        l0Values.Add(val);
+                }
+            }
+        }
+
+        Assert.True(l0Values.Count > 2, "Should have multiple L0 values");
+
+        // After ramp-up, values should vary around 500 (midpoint)
+        // Check that we see values both above and below midpoint (or at least not all the same)
+        var minVal = l0Values.Min();
+        var maxVal = l0Values.Max();
+        Assert.True(maxVal - minVal > 10, $"Values should oscillate, min={minVal} max={maxVal}");
+    }
+
+    [Fact]
+    public void TestMode_RespectsAxisMinMax()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        configs[0].Min = 20; // L0 min
+        configs[0].Max = 80; // L0 max
+        _sut.SetAxisConfigs(configs);
+        _sut.StartTestAxis("L0", 1.5);
+
+        _sut.Start();
+        Thread.Sleep(500);
+        _sut.StopTimer();
+
+        var l0Values = new List<int>();
+        foreach (var msg in _transport.SentMessages)
+        {
+            var parts = msg.TrimEnd('\n').Split(' ');
+            foreach (var part in parts)
+            {
+                if (part.StartsWith("L0") && part.Contains('I'))
+                {
+                    var valStr = part.Substring(2, part.IndexOf('I') - 2);
+                    if (int.TryParse(valStr, out var val))
+                        l0Values.Add(val);
+                }
+            }
+        }
+
+        if (l0Values.Count > 0)
+        {
+            // All values should be within the min/max TCode range
+            // Min=20 → TCode 199, Max=80 → TCode 799 (approximately)
+            // With test oscillation center=50 ±amplitude, scaled through min/max
+            var tMin = TCodeService.PositionToTCode(configs[0], 0); // position 0 → min=20 → tcode ~199
+            var tMax = TCodeService.PositionToTCode(configs[0], 100); // position 100 → max=80 → tcode ~799
+            Assert.All(l0Values, v => Assert.InRange(v, tMin, tMax));
+        }
+    }
+
+    [Fact]
+    public void StopTestAxis_SendsMidpoint_WhenNotTesting()
+    {
+        _sut.SetAxisConfigs(AxisConfig.CreateDefaults());
+
+        // StopTestAxis on a non-testing axis should send midpoint as safety
+        _sut.StopTestAxis("L0");
+
+        Assert.Contains(_transport.SentMessages, msg => msg.Contains("L0500"));
+    }
+
+    [Fact]
+    public void StopTimer_ClearsTestAxes()
+    {
+        _sut.StartTestAxis("L0", 1.0);
+        _sut.StartTestAxis("R0", 2.0);
+
+        _sut.StopTimer();
+
+        Assert.False(_sut.IsAxisTesting("L0"));
+        Assert.False(_sut.IsAxisTesting("R0"));
+    }
+
+    [Fact]
+    public void StartTestAxis_ClampsSpeed()
+    {
+        // Should not throw even with out-of-range speeds
+        _sut.StartTestAxis("L0", 0.001); // Below min → clamped to 0.1
+        Assert.True(_sut.IsAxisTesting("L0"));
+
+        _sut.StartTestAxis("L0", 100.0); // Above max → clamped to 5.0
+        Assert.True(_sut.IsAxisTesting("L0"));
+    }
+
     // ===== SleepPrecise =====
 
     [Fact]

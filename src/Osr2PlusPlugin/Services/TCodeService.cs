@@ -60,6 +60,16 @@ public class TCodeService : IDisposable
     // Previous axis state snapshot for detecting transitions
     private readonly Dictionary<string, (bool Enabled, AxisFillMode FillMode)> _prevAxisState = new();
 
+    // ===== Test Mode State =====
+    private readonly object _testLock = new();
+    private readonly Dictionary<string, TestAxisState> _testingAxes = new();
+
+    /// <summary>Raised when a test axis finishes ramping down.</summary>
+    public event Action<string>? TestAxisStopped;
+
+    /// <summary>Raised when all test axes are auto-stopped (e.g. playback starts).</summary>
+    public event Action? AllTestsStopped;
+
     /// <summary>Current output rate in Hz.</summary>
     public int OutputRateHz => _outputRateHz;
 
@@ -166,6 +176,7 @@ public class TCodeService : IDisposable
 
     /// <summary>
     /// Set playback state. Re-anchors the sync point to preserve continuity.
+    /// Auto-stops all test axes when funscript playback starts.
     /// </summary>
     public void SetPlaying(bool playing)
     {
@@ -176,6 +187,12 @@ public class TCodeService : IDisposable
             _syncPlaying = playing;
         }
         _isPlaying = playing;
+
+        // Auto-stop all test axes when funscript playback starts
+        if (playing && _scripts.Count > 0)
+        {
+            StopAllTestAxes();
+        }
     }
 
     /// <summary>
@@ -227,6 +244,95 @@ public class TCodeService : IDisposable
         _outputThread?.Join(500);
         _outputThread = null;
         _lastSentValues.Clear();
+        lock (_testLock) _testingAxes.Clear();
+    }
+
+    // ===== Test Mode API =====
+
+    /// <summary>
+    /// Start test oscillation on the given axis.
+    /// </summary>
+    public void StartTestAxis(string axisId, double speedHz)
+    {
+        speedHz = Math.Clamp(speedHz, 0.1, 5.0);
+        lock (_testLock)
+        {
+            _testingAxes[axisId] = new TestAxisState
+            {
+                Phase = 0,
+                CurrentSpeedHz = speedHz,
+                TargetSpeedHz = speedHz,
+                CurrentAmplitude = 0,       // Ramps up smoothly
+                TargetAmplitude = 50,       // Full range: ±50 around center
+                LastTickAt = Stopwatch.GetTimestamp()
+            };
+        }
+    }
+
+    /// <summary>
+    /// Begin smooth stop of test oscillation on the given axis.
+    /// </summary>
+    public void StopTestAxis(string axisId)
+    {
+        lock (_testLock)
+        {
+            if (_testingAxes.TryGetValue(axisId, out var state))
+            {
+                state.TargetAmplitude = 0; // Ramp down; removed in tick when amplitude < 0.5
+            }
+            else
+            {
+                // Not currently testing — send midpoint as safety
+                SendMidpoint(axisId);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Update the test speed for an axis currently under test.
+    /// </summary>
+    public void UpdateTestSpeed(string axisId, double speedHz)
+    {
+        speedHz = Math.Clamp(speedHz, 0.1, 5.0);
+        lock (_testLock)
+        {
+            if (_testingAxes.TryGetValue(axisId, out var state))
+            {
+                state.TargetSpeedHz = speedHz;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Check whether an axis is currently under test.
+    /// </summary>
+    public bool IsAxisTesting(string axisId)
+    {
+        lock (_testLock) return _testingAxes.ContainsKey(axisId);
+    }
+
+    /// <summary>
+    /// Stop all test axes immediately (e.g. on disconnect or playback start).
+    /// </summary>
+    public void StopAllTestAxes()
+    {
+        List<string> stoppedIds;
+        lock (_testLock)
+        {
+            stoppedIds = _testingAxes.Keys.ToList();
+            _testingAxes.Clear();
+        }
+
+        // Send midpoints outside the lock
+        foreach (var id in stoppedIds)
+        {
+            SendMidpoint(id);
+        }
+
+        if (stoppedIds.Count > 0)
+        {
+            AllTestsStopped?.Invoke();
+        }
     }
 
     public void Dispose()
@@ -274,10 +380,13 @@ public class TCodeService : IDisposable
             {
                 if (_transport?.IsConnected == true)
                 {
+                    bool hasTestAxes;
+                    lock (_testLock) hasTestAxes = _testingAxes.Count > 0;
+
                     bool hasFillOrReturn = HasActiveFillModes();
-                    if (_isPlaying || hasFillOrReturn)
+                    if (_isPlaying || hasFillOrReturn || hasTestAxes)
                     {
-                        OutputTick(elapsedSec);
+                        OutputTick(elapsedSec, hasTestAxes);
                     }
                 }
             }
@@ -319,7 +428,7 @@ public class TCodeService : IDisposable
 
     // ===== Output Tick =====
 
-    private void OutputTick(double elapsedSec)
+    private void OutputTick(double elapsedSec, bool hasTestAxes)
     {
         var rawTimeMs = GetExtrapolatedTimeMs();
         var currentTimeMs = rawTimeMs - _offsetMs;
@@ -329,6 +438,7 @@ public class TCodeService : IDisposable
         intervalMs = Math.Max(1, intervalMs);
 
         var parts = new List<string>();
+        var finishedTestAxes = new List<string>();
 
         // === First pass: compute L0 stroke position for grind/random sync ===
         double strokePosition = 50.0;
@@ -351,6 +461,53 @@ public class TCodeService : IDisposable
             {
                 ProcessReturnToCenter(config, intervalMs, parts);
                 continue;
+            }
+
+            // === Test mode: cosine oscillation with smooth ramp-up/down ===
+            TestAxisState? testState = null;
+            if (hasTestAxes)
+            {
+                lock (_testLock) _testingAxes.TryGetValue(config.Id, out testState);
+            }
+
+            if (testState != null)
+            {
+                var now = Stopwatch.GetTimestamp();
+                var testDeltaSec = Math.Min(
+                    (now - testState.LastTickAt) / (double)Stopwatch.Frequency, 0.1);
+                testState.LastTickAt = now;
+
+                // Smooth speed transition (exponential smoothing, factor 0.03)
+                testState.CurrentSpeedHz += (testState.TargetSpeedHz - testState.CurrentSpeedHz) * 0.03;
+
+                // Smooth amplitude ramp (exponential smoothing, factor 0.02)
+                testState.CurrentAmplitude += (testState.TargetAmplitude - testState.CurrentAmplitude) * 0.02;
+
+                // Check if finished ramping down
+                if (testState.TargetAmplitude == 0 && testState.CurrentAmplitude < 0.5)
+                {
+                    finishedTestAxes.Add(config.Id);
+                    var midVal = PositionToTCode(config, 50.0);
+                    parts.Add(FormatTCodeCommand(config, midVal, intervalMs));
+                    _lastSentValues[config.Id] = midVal;
+                    continue;
+                }
+
+                // Advance phase (cumulative — no jumps on speed change)
+                testState.Phase += testState.CurrentSpeedHz * testDeltaSec;
+                testState.Phase %= 1.0;
+
+                // Cosine waveform: smooth direction reversals
+                var testPosition = 50.0 + testState.CurrentAmplitude * Math.Cos(testState.Phase * 2.0 * Math.PI);
+
+                // Scale through axis min/max and apply offset
+                var testTcode = ApplyPositionOffset(config, PositionToTCode(config, testPosition));
+                if (IsDirty(config.Id, testTcode))
+                {
+                    parts.Add(FormatTCodeCommand(config, testTcode, intervalMs));
+                    _lastSentValues[config.Id] = testTcode;
+                }
+                continue; // Skip normal playback for this axis
             }
 
             // Scripted axis: interpolate position from funscript
@@ -466,6 +623,18 @@ public class TCodeService : IDisposable
         if (parts.Count > 0)
         {
             _transport?.Send(string.Join(" ", parts) + "\n");
+        }
+
+        // Clean up finished test axes (outside the per-axis loop to avoid modifying dictionary during iteration)
+        if (finishedTestAxes.Count > 0)
+        {
+            lock (_testLock)
+            {
+                foreach (var id in finishedTestAxes)
+                    _testingAxes.Remove(id);
+            }
+            foreach (var id in finishedTestAxes)
+                TestAxisStopped?.Invoke(id);
         }
     }
 
@@ -598,5 +767,30 @@ public class TCodeService : IDisposable
         var prefix = config.Type == "rotation" ? "R" : "L";
         var axisNum = config.Id[1];
         return $"{prefix}{axisNum}{tcodeValue:D3}I{intervalMs}";
+    }
+
+    /// <summary>
+    /// Sends a midpoint command (500) for the given axis to the transport.
+    /// </summary>
+    private void SendMidpoint(string axisId)
+    {
+        var config = _axisConfigs.FirstOrDefault(c => c.Id == axisId);
+        if (config == null || _transport?.IsConnected != true) return;
+        var prefix = config.Type == "rotation" ? "R" : "L";
+        var axisNum = config.Id[1];
+        _transport.Send($"{prefix}{axisNum}500I500\n");
+        _lastSentValues.Remove(axisId);
+    }
+
+    // ===== Test Axis State =====
+
+    private class TestAxisState
+    {
+        public double Phase { get; set; }
+        public double CurrentSpeedHz { get; set; }
+        public double TargetSpeedHz { get; set; }
+        public double CurrentAmplitude { get; set; }
+        public double TargetAmplitude { get; set; }
+        public long LastTickAt { get; set; }
     }
 }
