@@ -50,6 +50,13 @@
         "order": 100
       }
     ],
+    "controlBar": [
+      {
+        "id": "beat-bar",
+        "tooltip": "Beat Bar",
+        "order": 50
+      }
+    ],
     "fileIcons": {
       ".funscript": "Assets/Icons/funscript-stroke.png",
       ".twist.funscript": "Assets/Icons/funscript-twist.png",

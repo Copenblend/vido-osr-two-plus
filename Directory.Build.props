@@ -3,7 +3,7 @@
     <PluginVersion>2.0.0</PluginVersion>
   </PropertyGroup>
   <PropertyGroup>
-    <VidoCoreVersion>0.5.3</VidoCoreVersion>
+    <VidoCoreVersion>0.7.0</VidoCoreVersion>
     <SystemIOPortsVersion>8.*</SystemIOPortsVersion>
     <SkiaSharpVersion>2.*</SkiaSharpVersion>
     <SkiaSharpViewsWpfVersion>2.*</SkiaSharpViewsWpfVersion>

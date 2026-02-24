@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Vido.Core.Events;
 using Vido.Core.Playback;
 using Vido.Core.Plugin;
+using Osr2PlusPlugin.Models;
 using Osr2PlusPlugin.Services;
 using Osr2PlusPlugin.ViewModels;
 using Osr2PlusPlugin.Views;
@@ -28,6 +29,10 @@ public class Osr2PlusPlugin : IVidoPlugin
     private SidebarViewModel? _sidebarVm;
     private AxisControlViewModel? _axisControlVm;
     private VisualizerViewModel? _visualizerVm;
+    private BeatBarViewModel? _beatBarVm;
+
+    // Beat bar
+    private BeatDetectionService? _beatDetection;
 
     // Event subscriptions
     private readonly List<IDisposable> _subscriptions = new();
@@ -115,6 +120,25 @@ public class Osr2PlusPlugin : IVidoPlugin
         // Wire script changes to visualizer
         _axisControlVm.ScriptsChanged += scripts => _visualizerVm.SetLoadedAxes(scripts);
 
+        // ── Beat Bar ─────────────────────────────────────────
+        _beatDetection = new BeatDetectionService();
+        _beatBarVm = new BeatBarViewModel(context.Settings, _beatDetection);
+
+        // Wire script changes to beat bar (use L0 axis)
+        _axisControlVm.ScriptsChanged += scripts =>
+        {
+            if (scripts.TryGetValue("L0", out var l0Script))
+                _beatBarVm.LoadBeats(l0Script);
+            else
+                _beatBarVm.ClearBeats();
+        };
+
+        // Wire mode change to overlay visibility
+        _beatBarVm.ModeChanged += mode =>
+        {
+            context.ToggleControlBarOverlay("beat-bar", mode != BeatBarMode.Off);
+        };
+
         // Wire file dialog factory for manual script loading
         foreach (var card in _axisControlVm.AxisCards)
         {
@@ -140,6 +164,9 @@ public class Osr2PlusPlugin : IVidoPlugin
         context.RegisterRightPanel("osr2-axis-control", () => new AxisControlView { DataContext = _axisControlVm });
         context.RegisterBottomPanel("osr2-visualizer", () => new VisualizerView { DataContext = _visualizerVm });
         context.RegisterStatusBarItem("osr2-status", () => _sidebarVm.StatusText);
+        context.RegisterControlBarItem("beat-bar",
+            () => new BeatBarComboBox { DataContext = _beatBarVm },
+            null);  // Overlay factory added in VOSR-054
         context.RegisterToolbarButtonHandler("osr2-quick-connect", OnQuickConnectClicked);
 
         var iconsDir = System.IO.Path.Combine(context.PluginDirectory, "Assets", "Icons");
@@ -219,6 +246,7 @@ public class Osr2PlusPlugin : IVidoPlugin
             if (_axisControlVm is null || _tcode is null) return;
 
             _axisControlVm.ClearScripts();
+            _beatBarVm?.ClearBeats();
             _tcode.SetPlaying(false);
             _axisControlVm.SetVideoPlaying(false);
             _visualizerVm?.ClearAxes();
@@ -253,6 +281,7 @@ public class Osr2PlusPlugin : IVidoPlugin
         {
             _tcode?.SetTime(e.Position.TotalMilliseconds);
             _visualizerVm?.UpdateTime(e.Position.TotalSeconds);
+            _beatBarVm?.UpdateTime(e.Position.TotalMilliseconds);
 
             // Poll speed ratio from the video engine on each position tick.
             // There is no dedicated SpeedRatioChanged event, so we check here
@@ -296,6 +325,7 @@ public class Osr2PlusPlugin : IVidoPlugin
             _sidebarVm?.OnSettingChanged(key);
             _axisControlVm?.OnSettingChanged(key);
             _visualizerVm?.OnSettingChanged(key);
+            _beatBarVm?.OnSettingChanged(key);
         }
         catch (Exception ex)
         {
