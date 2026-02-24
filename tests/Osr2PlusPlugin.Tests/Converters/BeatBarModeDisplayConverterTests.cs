@@ -10,7 +10,7 @@ public class BeatBarModeDisplayConverterTests
     private readonly BeatBarModeDisplayConverter _sut = new();
 
     [Theory]
-    [InlineData(BeatBarMode.Off, "Off")]
+    [InlineData(BeatBarMode.Off, "No Beat Bar")]
     [InlineData(BeatBarMode.OnPeak, "On Peak")]
     [InlineData(BeatBarMode.OnValley, "On Valley")]
     public void Convert_ReturnsExpectedDisplayString(BeatBarMode mode, string expected)

@@ -37,7 +37,7 @@
                   ItemContainerStyle="{StaticResource Osr2ComboBoxItemStyle}"
                   ItemsSource="{Binding Source={StaticResource BeatBarModeValues}}"
                   SelectedItem="{Binding Mode}"
-                  Width="90"
+                  Width="115"
                   ToolTip="Beat Bar Mode">
             <ComboBox.ItemTemplate>
                 <DataTemplate>
