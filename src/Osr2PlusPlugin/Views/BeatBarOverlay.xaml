@@ -1,0 +1,10 @@
+<UserControl x:Class="Osr2PlusPlugin.Views.BeatBarOverlay"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="Transparent"
+             IsHitTestVisible="False"
+             VerticalAlignment="Bottom"
+             HorizontalAlignment="Stretch"
+             Height="80">
+    <ContentControl x:Name="CanvasHost" />
+</UserControl>

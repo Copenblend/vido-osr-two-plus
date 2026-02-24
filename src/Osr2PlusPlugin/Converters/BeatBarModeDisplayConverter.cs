@@ -15,6 +15,7 @@ public class BeatBarModeDisplayConverter : IValueConverter
         {
             return mode switch
             {
+                BeatBarMode.Off => "No Beat Bar",
                 BeatBarMode.OnPeak => "On Peak",
                 BeatBarMode.OnValley => "On Valley",
                 _ => mode.ToString()

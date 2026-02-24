@@ -131,6 +131,12 @@ public class Osr2PlusPlugin : IVidoPlugin
                 _beatBarVm.LoadBeats(l0Script);
             else
                 _beatBarVm.ClearBeats();
+
+            // Ensure overlay visibility matches current mode.
+            // ModeChanged only fires on mode transitions, so if the mode was
+            // persisted as OnPeak/OnValley the overlay would stay hidden after
+            // a video load or resume.
+            context.ToggleControlBarOverlay("beat-bar", _beatBarVm.IsActive);
         };
 
         // Wire mode change to overlay visibility
@@ -166,7 +172,7 @@ public class Osr2PlusPlugin : IVidoPlugin
         context.RegisterStatusBarItem("osr2-status", () => _sidebarVm.StatusText);
         context.RegisterControlBarItem("beat-bar",
             () => new BeatBarComboBox { DataContext = _beatBarVm },
-            null);  // Overlay factory added in VOSR-054
+            () => new BeatBarOverlay { DataContext = _beatBarVm });
         context.RegisterToolbarButtonHandler("osr2-quick-connect", OnQuickConnectClicked);
 
         var iconsDir = System.IO.Path.Combine(context.PluginDirectory, "Assets", "Icons");
