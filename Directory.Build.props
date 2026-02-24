@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <PluginVersion>1.0.0</PluginVersion>
+    <PluginVersion>2.0.0</PluginVersion>
   </PropertyGroup>
   <PropertyGroup>
     <VidoCoreVersion>0.5.3</VidoCoreVersion>

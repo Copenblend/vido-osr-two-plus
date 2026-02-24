@@ -2,7 +2,7 @@
   "id": "com.vido.osr2-plus",
   "name": "osr2-plus",
   "displayName": "OSR2+",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "OSR2+ stroker device control — syncs funscript files with video playback via TCode over Serial and UDP connections.",
   "author": "Vido",
   "license": "MIT",

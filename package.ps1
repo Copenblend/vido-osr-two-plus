@@ -1,5 +1,5 @@
 # package.ps1 — Build and package the OSR2+ Plugin for Vido
-# Produces: vido-osr2-plus-1.0.0.zip
+# Produces: vido-osr2-plus-2.0.0.zip
 # Also deploys to %APPDATA%\Vido\plugins\ for local testing
 
 $ErrorActionPreference = 'Stop'
