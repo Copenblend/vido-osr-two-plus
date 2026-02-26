@@ -5,6 +5,23 @@ All notable changes to the OSR2+ Plugin for Vido will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.1.0] - 2026-02-26
+
+### Added
+
+- **External beat source API** — `IExternalBeatSource` interface allowing third-party plugins to provide beat data to the BeatBar
+- **BeatBar external modes** — BeatBar mode selector dynamically includes modes registered by external plugins (e.g. Pulse)
+- **External axis positions** — `ExternalAxisPositionsEvent` allows external plugins to drive L0 stroke positions directly
+- **External beat events** — `ExternalBeatEvent` notifies the BeatBar of beats detected by external sources
+- **Funscript suppression** — `SuppressFunscriptEvent` lets external plugins disable funscript auto-loading when active
+- **BeatBar mode persistence** — selected BeatBar mode (including external modes) is saved and restored across sessions
+- **Pending mode restoration** — if a saved external BeatBar mode isn't yet available at startup, selection is deferred until the source registers
+- **Beat rate divisor** — control bar ComboBox for beat rate selection (1, 1/2, 1/4, 1/8) affecting external beat sources
+
+### Changed
+
+- Updated funscript file icons to text-based labels (FS, R0, R1, R2) _(previously released as 2.0.0)_
+
 ## [2.0.0] - 2026-02-23
 
 ### Changed
