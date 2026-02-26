@@ -1,15 +1,19 @@
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Osr2PlusPlugin.Models;
 using Osr2PlusPlugin.Services;
 using Vido.Core.Plugin;
+using Vido.Haptics;
 
 namespace Osr2PlusPlugin.ViewModels;
 
 /// <summary>
 /// ViewModel for the beat bar overlay and control bar ComboBox.
-/// Manages mode selection (Off/OnPeak/OnValley), beat detection,
-/// current playback time, and settings persistence.
+/// Manages mode selection (Off/OnPeak/OnValley + external sources),
+/// beat detection, current playback time, and settings persistence.
+/// Supports dynamic registration of external beat sources via
+/// <see cref="ExternalBeatSourceRegistration"/> events.
 /// </summary>
 public class BeatBarViewModel : INotifyPropertyChanged
 {
@@ -21,10 +25,21 @@ public class BeatBarViewModel : INotifyPropertyChanged
     private List<double> _beats = new();
     private FunscriptData? _currentScript;
 
+    // External beat sources (registered by plugins via IEventBus)
+    private readonly List<IExternalBeatSource> _externalSources = [];
+
+    // External beats provided by plugins (keyed by source ID)
+    private List<double> _externalBeats = new();
+
     // Suppress settings save when loading from store or external change
     private bool _suppressSave;
 
     // ── Properties ───────────────────────────────────────────
+
+    /// <summary>
+    /// Available modes for the ComboBox. Rebuilt when external sources register/unregister.
+    /// </summary>
+    public ObservableCollection<BeatBarMode> AvailableModes { get; } = new(BeatBarMode.BuiltInModes);
 
     /// <summary>
     /// The active beat bar mode. Bound to the control bar ComboBox.
@@ -40,8 +55,11 @@ public class BeatBarViewModel : INotifyPropertyChanged
                 if (!_suppressSave)
                     _settings.Set("beatBarMode", value.ToString());
 
-                RedetectBeats();
+                if (!value.IsExternal)
+                    RedetectBeats();
+
                 OnPropertyChanged(nameof(IsActive));
+                OnPropertyChanged(nameof(IsExternalMode));
                 ModeChanged?.Invoke(value);
                 RepaintRequested?.Invoke();
             }
@@ -54,6 +72,11 @@ public class BeatBarViewModel : INotifyPropertyChanged
     public bool IsActive => _mode != BeatBarMode.Off && HasBeats;
 
     /// <summary>
+    /// True when the current mode is an external source mode.
+    /// </summary>
+    public bool IsExternalMode => _mode.IsExternal;
+
+    /// <summary>
     /// Current playback position in milliseconds. Updated at ~60Hz.
     /// </summary>
     public double CurrentTimeMs
@@ -64,6 +87,8 @@ public class BeatBarViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// Sorted list of beat timestamps in milliseconds.
+    /// For external modes, these are the externally provided beats.
+    /// For built-in modes, these are detected from the funscript.
     /// </summary>
     public List<double> Beats
     {
@@ -79,6 +104,19 @@ public class BeatBarViewModel : INotifyPropertyChanged
     /// True when at least one beat has been detected.
     /// </summary>
     public bool HasBeats => _beats.Count > 0;
+
+    /// <summary>
+    /// Returns the registered external beat source matching the current mode, or null.
+    /// Used by the overlay to delegate rendering.
+    /// </summary>
+    public IExternalBeatSource? ActiveExternalSource
+    {
+        get
+        {
+            if (!_mode.IsExternal) return null;
+            return _externalSources.FirstOrDefault(s => s.Id == _mode.Id);
+        }
+    }
 
     // ── Events ───────────────────────────────────────────────
 
@@ -111,7 +149,8 @@ public class BeatBarViewModel : INotifyPropertyChanged
     public void LoadBeats(FunscriptData? scriptData)
     {
         _currentScript = scriptData;
-        RedetectBeats();
+        if (!_mode.IsExternal)
+            RedetectBeats();
         OnPropertyChanged(nameof(IsActive));
     }
 
@@ -123,6 +162,7 @@ public class BeatBarViewModel : INotifyPropertyChanged
     {
         _currentScript = null;
         Beats = new List<double>();
+        _externalBeats = new List<double>();
         OnPropertyChanged(nameof(IsActive));
         RepaintRequested?.Invoke();
     }
@@ -137,17 +177,97 @@ public class BeatBarViewModel : INotifyPropertyChanged
         RepaintRequested?.Invoke();
     }
 
+    // ── External Beat Source Management ──────────────────────
+
+    /// <summary>
+    /// Handles <see cref="ExternalBeatSourceRegistration"/> events from the event bus.
+    /// Adds or removes external beat sources and rebuilds the available modes list.
+    /// </summary>
+    public void OnBeatSourceRegistration(ExternalBeatSourceRegistration registration)
+    {
+        if (registration.IsRegistering)
+        {
+            // Remove any existing source with the same ID first, then add
+            _externalSources.RemoveAll(s => s.Id == registration.Source.Id);
+            _externalSources.Add(registration.Source);
+        }
+        else
+        {
+            _externalSources.RemoveAll(s => s.Id == registration.Source.Id);
+        }
+
+        RebuildAvailableModes();
+    }
+
+    /// <summary>
+    /// Handles <see cref="ExternalBeatEvent"/> from the event bus.
+    /// Updates the beat list when the current mode is an external source matching the event.
+    /// </summary>
+    public void OnExternalBeatEvent(ExternalBeatEvent beatEvent)
+    {
+        if (_mode.IsExternal && _mode.Id == beatEvent.SourceId)
+        {
+            _externalBeats = beatEvent.BeatTimesMs.ToList();
+            Beats = _externalBeats;
+            OnPropertyChanged(nameof(IsActive));
+            RepaintRequested?.Invoke();
+        }
+        else
+        {
+            // Cache external beats even if not the current mode, so when user switches
+            // to the external mode, beats are immediately available
+            if (_externalSources.Any(s => s.Id == beatEvent.SourceId))
+            {
+                _externalBeats = beatEvent.BeatTimesMs.ToList();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the <see cref="AvailableModes"/> collection based on current external sources.
+    /// Hides built-in modes when an active external source requests it.
+    /// </summary>
+    internal void RebuildAvailableModes()
+    {
+        AvailableModes.Clear();
+        AvailableModes.Add(BeatBarMode.Off);
+
+        var hideBuiltIn = _externalSources.Any(s => s.IsAvailable && s.HidesBuiltInModes);
+
+        if (!hideBuiltIn)
+        {
+            AvailableModes.Add(BeatBarMode.OnPeak);
+            AvailableModes.Add(BeatBarMode.OnValley);
+        }
+
+        foreach (var source in _externalSources.Where(s => s.IsAvailable))
+            AvailableModes.Add(BeatBarMode.CreateExternal(source.Id, source.DisplayName));
+
+        // If current mode was removed, revert to Off
+        if (!AvailableModes.Any(m => m == _mode))
+        {
+            Mode = BeatBarMode.Off;
+        }
+        else
+        {
+            // Mode is still valid — refresh IsActive in case beats changed
+            OnPropertyChanged(nameof(IsActive));
+        }
+    }
+
     // ── Settings Persistence ─────────────────────────────────
 
     private void LoadSettings()
     {
         var modeStr = _settings.Get("beatBarMode", "Off");
-        if (Enum.TryParse<BeatBarMode>(modeStr, out var mode))
+        var resolved = BeatBarMode.BuiltInModes.FirstOrDefault(m => m.Id == modeStr);
+        if (resolved != null)
         {
             _suppressSave = true;
-            _mode = mode;
+            _mode = resolved;
             _suppressSave = false;
         }
+        // External modes are restored when the source re-registers on next plugin activation
     }
 
     /// <summary>
@@ -159,10 +279,11 @@ public class BeatBarViewModel : INotifyPropertyChanged
         if (key != "beatBarMode") return;
 
         var modeStr = _settings.Get("beatBarMode", "Off");
-        if (Enum.TryParse<BeatBarMode>(modeStr, out var mode) && mode != _mode)
+        var resolved = AvailableModes.FirstOrDefault(m => m.Id == modeStr);
+        if (resolved != null && resolved != _mode)
         {
             _suppressSave = true;
-            Mode = mode;
+            Mode = resolved;
             _suppressSave = false;
         }
     }
@@ -171,10 +292,22 @@ public class BeatBarViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// Re-runs beat detection using the current mode and stored script data.
+    /// Only called for built-in modes (not external).
     /// </summary>
     private void RedetectBeats()
     {
-        Beats = _beatDetection.DetectBeats(_currentScript, _mode);
+        if (_mode == BeatBarMode.Off)
+        {
+            Beats = new List<double>();
+        }
+        else if (_mode == BeatBarMode.OnPeak)
+        {
+            Beats = _beatDetection.DetectBeats(_currentScript, BeatDetectionMode.OnPeak);
+        }
+        else if (_mode == BeatBarMode.OnValley)
+        {
+            Beats = _beatDetection.DetectBeats(_currentScript, BeatDetectionMode.OnValley);
+        }
         RepaintRequested?.Invoke();
     }
 

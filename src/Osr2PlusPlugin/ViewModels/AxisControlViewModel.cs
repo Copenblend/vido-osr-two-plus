@@ -5,12 +5,14 @@ using System.Windows.Input;
 using Osr2PlusPlugin.Models;
 using Osr2PlusPlugin.Services;
 using Vido.Core.Plugin;
+using Vido.Haptics;
 
 namespace Osr2PlusPlugin.ViewModels;
 
 /// <summary>
 /// ViewModel for the axis control panel. Manages all four axis cards,
 /// persists axis settings, and orchestrates funscript auto-loading.
+/// Supports funscript suppression via <see cref="SuppressFunscriptEvent"/>.
 /// </summary>
 public class AxisControlViewModel : INotifyPropertyChanged
 {
@@ -22,6 +24,7 @@ public class AxisControlViewModel : INotifyPropertyChanged
     private bool _isVideoPlaying;
     private bool _isDeviceConnected;
     private bool _isTesting;
+    private bool _funscriptsSuppressed;
 
     /// <summary>The four axis cards: L0, R0, R1, R2.</summary>
     public ObservableCollection<AxisCardViewModel> AxisCards { get; }
@@ -31,6 +34,11 @@ public class AxisControlViewModel : INotifyPropertyChanged
     /// Carries the current set of loaded scripts.
     /// </summary>
     public event Action<Dictionary<string, FunscriptData>>? ScriptsChanged;
+
+    /// <summary>
+    /// Raised when any axis configuration changes (min/max/enabled/fill settings).
+    /// </summary>
+    public event Action? AxisConfigChanged;
 
     /// <summary>Whether test mode is currently active.</summary>
     public bool IsTesting
@@ -110,10 +118,15 @@ public class AxisControlViewModel : INotifyPropertyChanged
     /// 1. Tries multi-axis format on the base funscript.
     /// 2. Falls back to individual axis-tagged files via FunscriptMatcher.
     /// 3. Updates each card's script and pushes to TCodeService.
+    /// Skipped when funscripts are suppressed via <see cref="SuppressFunscriptEvent"/>.
     /// </summary>
     public void LoadScriptsForVideo(string videoPath)
     {
         if (string.IsNullOrEmpty(videoPath))
+            return;
+
+        // When funscripts are suppressed, skip auto-loading entirely
+        if (_funscriptsSuppressed)
             return;
 
         // Find matching individual scripts
@@ -217,6 +230,25 @@ public class AxisControlViewModel : INotifyPropertyChanged
         _tcode.SetScripts(empty);
         ScriptsChanged?.Invoke(empty);
     }
+
+    /// <summary>
+    /// Handles <see cref="SuppressFunscriptEvent"/> from the event bus.
+    /// When suppressed, clears all loaded scripts and prevents auto-loading.
+    /// When unsuppressed, allows auto-loading to resume.
+    /// </summary>
+    public void OnSuppressFunscript(SuppressFunscriptEvent e)
+    {
+        _funscriptsSuppressed = e.SuppressFunscripts;
+
+        if (_funscriptsSuppressed)
+        {
+            // Clear all loaded scripts when suppression is activated
+            ClearAllScripts();
+        }
+    }
+
+    /// <summary>Whether funscript auto-loading is currently suppressed.</summary>
+    public bool IsFunscriptsSuppressed => _funscriptsSuppressed;
 
     // ═══════════════════════════════════════════════════════
     //  State Updates (called by plugin entry point)
@@ -367,6 +399,7 @@ public class AxisControlViewModel : INotifyPropertyChanged
         // Re-push configs to TCodeService and persist
         _tcode.SetAxisConfigs(_configs);
         SaveSettings();
+        AxisConfigChanged?.Invoke();
     }
 
     // ═══════════════════════════════════════════════════════

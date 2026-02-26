@@ -8,14 +8,14 @@ namespace Osr2PlusPlugin.Services;
 public class BeatDetectionService
 {
     /// <summary>
-    /// Detects beat timestamps from funscript actions based on the selected mode.
+    /// Detects beat timestamps from funscript actions based on the selected detection mode.
     /// </summary>
     /// <param name="script">The parsed funscript data (typically L0 axis).</param>
-    /// <param name="mode">Whether to detect peaks, valleys, or nothing.</param>
+    /// <param name="mode">Whether to detect peaks or valleys.</param>
     /// <returns>Sorted list of beat times in milliseconds.</returns>
-    public List<double> DetectBeats(FunscriptData? script, BeatBarMode mode)
+    public List<double> DetectBeats(FunscriptData? script, BeatDetectionMode mode)
     {
-        if (mode == BeatBarMode.Off || script is null || script.Actions.Count < 3)
+        if (script is null || script.Actions.Count < 3)
             return new List<double>();
 
         var actions = script.Actions;
@@ -29,11 +29,11 @@ public class BeatDetectionService
 
             switch (mode)
             {
-                case BeatBarMode.OnPeak when curr > prev && curr >= next:
+                case BeatDetectionMode.OnPeak when curr > prev && curr >= next:
                     beats.Add(actions[i].AtMs);
                     break;
 
-                case BeatBarMode.OnValley when curr < prev && curr <= next:
+                case BeatDetectionMode.OnValley when curr < prev && curr <= next:
                     beats.Add(actions[i].AtMs);
                     break;
             }

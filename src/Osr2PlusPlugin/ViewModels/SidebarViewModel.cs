@@ -4,19 +4,23 @@ using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using Osr2PlusPlugin.Models;
 using Osr2PlusPlugin.Services;
+using Vido.Core.Events;
 using Vido.Core.Plugin;
+using Vido.Haptics;
 
 namespace Osr2PlusPlugin.ViewModels;
 
 /// <summary>
 /// ViewModel for the sidebar panel. Manages connection settings (mode, port, baud),
 /// output rate, global offset, and panel visibility commands. Persists settings
-/// via <see cref="IPluginSettingsStore"/>.
+/// via <see cref="IPluginSettingsStore"/>. Publishes <see cref="HapticTransportStateEvent"/>
+/// on connect/disconnect.
 /// </summary>
 public class SidebarViewModel : INotifyPropertyChanged
 {
     private readonly TCodeService _tcode;
     private readonly IPluginSettingsStore _settings;
+    private readonly IEventBus? _eventBus;
 
     // Connection state
     private ConnectionMode _selectedMode = ConnectionMode.UDP;
@@ -233,10 +237,11 @@ public class SidebarViewModel : INotifyPropertyChanged
 
     // ===== Constructor =====
 
-    public SidebarViewModel(TCodeService tcode, IPluginSettingsStore settings)
+    public SidebarViewModel(TCodeService tcode, IPluginSettingsStore settings, IEventBus? eventBus = null)
     {
         _tcode = tcode;
         _settings = settings;
+        _eventBus = eventBus;
 
         // Initialize transport factory
         TransportFactory = DefaultTransportFactory;
@@ -300,6 +305,7 @@ public class SidebarViewModel : INotifyPropertyChanged
         _tcode.Start();
 
         IsConnected = true;
+        PublishTransportState(true);
     }
 
     internal void Disconnect()
@@ -318,6 +324,7 @@ public class SidebarViewModel : INotifyPropertyChanged
         }
 
         IsConnected = false;
+        PublishTransportState(false);
     }
 
     private void OnTransportConnectionChanged(bool connected)
@@ -329,6 +336,7 @@ public class SidebarViewModel : INotifyPropertyChanged
             _tcode.Transport = null;
             _transport = null;
             IsConnected = false;
+            PublishTransportState(false);
         }
     }
 
@@ -355,6 +363,28 @@ public class SidebarViewModel : INotifyPropertyChanged
         {
             SelectedComPort = AvailableComPorts[0];
         }
+    }
+
+    // ===== Haptic Transport State Publishing =====
+
+    /// <summary>
+    /// Publishes a <see cref="HapticTransportStateEvent"/> on the event bus
+    /// so other plugins can observe connect/disconnect.
+    /// </summary>
+    private void PublishTransportState(bool isConnected)
+    {
+        _eventBus?.Publish(new HapticTransportStateEvent
+        {
+            IsConnected = isConnected,
+            ConnectionLabel = isConnected ? BuildConnectionLabel() : null,
+        });
+    }
+
+    private string BuildConnectionLabel()
+    {
+        return _selectedMode == ConnectionMode.UDP
+            ? $"UDP:{_udpPort}"
+            : $"COM:{_selectedComPort}";
     }
 
     // ===== Settings Persistence =====
