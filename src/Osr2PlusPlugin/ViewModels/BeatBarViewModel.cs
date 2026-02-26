@@ -34,6 +34,10 @@ public class BeatBarViewModel : INotifyPropertyChanged
     // Suppress settings save when loading from store or external change
     private bool _suppressSave;
 
+    // Deferred external mode: the saved mode ID that wasn't resolvable at startup
+    // because external sources register after the ViewModel is constructed.
+    private string? _pendingExternalModeId;
+
     // ── Properties ───────────────────────────────────────────
 
     /// <summary>
@@ -254,6 +258,17 @@ public class BeatBarViewModel : INotifyPropertyChanged
             // Mode is still valid — refresh IsActive in case beats changed
             OnPropertyChanged(nameof(IsActive));
         }
+
+        // Auto-select a deferred external mode that was persisted from a previous session
+        if (_pendingExternalModeId != null)
+        {
+            var pending = AvailableModes.FirstOrDefault(m => m.Id == _pendingExternalModeId);
+            if (pending != null)
+            {
+                _pendingExternalModeId = null;
+                Mode = pending;
+            }
+        }
     }
 
     // ── Settings Persistence ─────────────────────────────────
@@ -268,7 +283,12 @@ public class BeatBarViewModel : INotifyPropertyChanged
             _mode = resolved;
             _suppressSave = false;
         }
-        // External modes are restored when the source re-registers on next plugin activation
+        else
+        {
+            // Not a built-in mode — remember it so we can auto-select
+            // when the external source registers later.
+            _pendingExternalModeId = modeStr;
+        }
     }
 
     /// <summary>

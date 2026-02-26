@@ -3,6 +3,7 @@ using Osr2PlusPlugin.Models;
 using Osr2PlusPlugin.Services;
 using Osr2PlusPlugin.ViewModels;
 using Vido.Core.Plugin;
+using Vido.Haptics;
 using Xunit;
 
 namespace Osr2PlusPlugin.Tests.ViewModels;
@@ -347,6 +348,120 @@ public class BeatBarViewModelTests
         _ = new BeatBarViewModel(settings.Object, _beatDetection);
 
         settings.Verify(s => s.Set(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  External Mode Persistence
+    // ═══════════════════════════════════════════════════════
+
+    [Fact]
+    public void Constructor_SavedExternalMode_StaysOffUntilSourceRegisters()
+    {
+        var settings = new Mock<IPluginSettingsStore>();
+        settings.Setup(s => s.Get("beatBarMode", "Off")).Returns("com.vido.pulse");
+
+        var vm = new BeatBarViewModel(settings.Object, _beatDetection);
+
+        // Before the external source registers, mode is Off
+        Assert.Equal(BeatBarMode.Off, vm.Mode);
+    }
+
+    [Fact]
+    public void SavedExternalMode_AutoSelectedWhenSourceRegisters()
+    {
+        var settings = new Mock<IPluginSettingsStore>();
+        settings.Setup(s => s.Get("beatBarMode", "Off")).Returns("com.vido.pulse");
+
+        var vm = new BeatBarViewModel(settings.Object, _beatDetection);
+
+        var source = new Mock<IExternalBeatSource>();
+        source.Setup(s => s.Id).Returns("com.vido.pulse");
+        source.Setup(s => s.DisplayName).Returns("Pulse");
+        source.Setup(s => s.IsAvailable).Returns(true);
+
+        vm.OnBeatSourceRegistration(new ExternalBeatSourceRegistration
+        {
+            Source = source.Object,
+            IsRegistering = true
+        });
+
+        Assert.Equal("com.vido.pulse", vm.Mode.Id);
+        Assert.True(vm.Mode.IsExternal);
+    }
+
+    [Fact]
+    public void SavedExternalMode_DoesNotResaveOnAutoSelect()
+    {
+        var settings = new Mock<IPluginSettingsStore>();
+        settings.Setup(s => s.Get("beatBarMode", "Off")).Returns("com.vido.pulse");
+
+        var vm = new BeatBarViewModel(settings.Object, _beatDetection);
+
+        var source = new Mock<IExternalBeatSource>();
+        source.Setup(s => s.Id).Returns("com.vido.pulse");
+        source.Setup(s => s.DisplayName).Returns("Pulse");
+        source.Setup(s => s.IsAvailable).Returns(true);
+
+        vm.OnBeatSourceRegistration(new ExternalBeatSourceRegistration
+        {
+            Source = source.Object,
+            IsRegistering = true
+        });
+
+        // The value is already persisted — auto-select should save (it's the normal Mode setter path)
+        // but should NOT double-save from LoadSettings
+        settings.Verify(s => s.Set("beatBarMode", "com.vido.pulse"), Times.Once);
+    }
+
+    [Fact]
+    public void SavedExternalMode_OnlyClearedOnceAfterAutoSelect()
+    {
+        var settings = new Mock<IPluginSettingsStore>();
+        settings.Setup(s => s.Get("beatBarMode", "Off")).Returns("com.vido.pulse");
+
+        var vm = new BeatBarViewModel(settings.Object, _beatDetection);
+
+        var source = new Mock<IExternalBeatSource>();
+        source.Setup(s => s.Id).Returns("com.vido.pulse");
+        source.Setup(s => s.DisplayName).Returns("Pulse");
+        source.Setup(s => s.IsAvailable).Returns(true);
+
+        var reg = new ExternalBeatSourceRegistration
+        {
+            Source = source.Object,
+            IsRegistering = true
+        };
+
+        vm.OnBeatSourceRegistration(reg);
+        Assert.Equal("com.vido.pulse", vm.Mode.Id);
+
+        // If user manually switches to Off, then source re-registers, mode should NOT auto-revert to Pulse
+        vm.Mode = BeatBarMode.Off;
+        vm.OnBeatSourceRegistration(reg);
+        Assert.Equal(BeatBarMode.Off, vm.Mode);
+    }
+
+    [Fact]
+    public void SavedExternalMode_UnrelatedSourceDoesNotTriggerAutoSelect()
+    {
+        var settings = new Mock<IPluginSettingsStore>();
+        settings.Setup(s => s.Get("beatBarMode", "Off")).Returns("com.vido.pulse");
+
+        var vm = new BeatBarViewModel(settings.Object, _beatDetection);
+
+        var other = new Mock<IExternalBeatSource>();
+        other.Setup(s => s.Id).Returns("com.other.plugin");
+        other.Setup(s => s.DisplayName).Returns("Other");
+        other.Setup(s => s.IsAvailable).Returns(true);
+
+        vm.OnBeatSourceRegistration(new ExternalBeatSourceRegistration
+        {
+            Source = other.Object,
+            IsRegistering = true
+        });
+
+        // "com.other.plugin" registered, but saved was "com.vido.pulse" — stay Off
+        Assert.Equal(BeatBarMode.Off, vm.Mode);
     }
 
     // ═══════════════════════════════════════════════════════

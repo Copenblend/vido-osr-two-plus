@@ -1526,6 +1526,171 @@ public class TCodeServiceTests : IDisposable
         Assert.Contains("R2374I2000", msg);
     }
 
+    // ===== External Axis Positions =====
+
+    [Fact]
+    public void ExternalPositions_L0_AppliesMinMaxLimits()
+    {
+        // L0 config: Min=20, Max=80 → position 50 should map within that range
+        var configs = AxisConfig.CreateDefaults();
+        configs[0].Min = 20;
+        configs[0].Max = 80;
+        _sut.SetAxisConfigs(configs);
+
+        _sut.SetExternalPositions(new Dictionary<string, double> { ["L0"] = 50.0 });
+        _sut.SetPlaying(true);
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        Assert.True(_transport.SentMessages.Count > 0);
+        var l0Cmds = _transport.SentMessages
+            .SelectMany(m => m.Split(' '))
+            .Where(p => p.StartsWith("L0"))
+            .ToList();
+        Assert.True(l0Cmds.Count > 0);
+
+        // Position 50 with min=20, max=80: scaled = 20 + 0.5*(80-20) = 50 → TCode = 50/100*999 = 499
+        var value = int.Parse(l0Cmds[0].Substring(2, 3));
+        Assert.Equal(499, value);
+    }
+
+    [Fact]
+    public void ExternalPositions_L0_AppliesPositionOffset()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        configs[0].PositionOffset = 10; // +10 points
+        _sut.SetAxisConfigs(configs);
+
+        _sut.SetExternalPositions(new Dictionary<string, double> { ["L0"] = 50.0 });
+        _sut.SetPlaying(true);
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        Assert.True(_transport.SentMessages.Count > 0);
+        var l0Cmds = _transport.SentMessages
+            .SelectMany(m => m.Split(' '))
+            .Where(p => p.StartsWith("L0"))
+            .ToList();
+        Assert.True(l0Cmds.Count > 0);
+
+        // Position 50 → TCode 499, plus offset 10% → 499 + (10/100*999) = 499 + 99 = 598
+        var value = int.Parse(l0Cmds[0].Substring(2, 3));
+        Assert.True(value > 499, $"L0 value {value} should be above 499 with +10 offset");
+    }
+
+    [Fact]
+    public void ExternalPositions_L0_FillModesStillWorkOnOtherAxes()
+    {
+        // When external positions drive L0, fills on other axes should use the external stroke position
+        var configs = AxisConfig.CreateDefaults();
+        configs[1].FillMode = AxisFillMode.Triangle; // R0 = Triangle fill
+        _sut.SetAxisConfigs(configs);
+
+        // No funscripts — only external L0
+        _sut.SetExternalPositions(new Dictionary<string, double> { ["L0"] = 75.0 });
+        _sut.SetPlaying(true);
+
+        _sut.Start();
+        Thread.Sleep(200);
+        _sut.StopTimer();
+
+        Assert.True(_transport.SentMessages.Count > 0);
+        // Should have both L0 (from external) and R0 (from fill)
+        var hasL0 = _transport.SentMessages.Any(m => m.Contains("L0"));
+        var hasR0 = _transport.SentMessages.Any(m => m.Contains("R0"));
+        Assert.True(hasL0, "Expected L0 commands from external positions");
+        Assert.True(hasR0, "Expected R0 commands from fill mode");
+    }
+
+    [Fact]
+    public void ExternalPositions_GrindFill_UsesExternalStrokePosition()
+    {
+        // Grind fill on R2 should follow external L0 position (not stuck at 50)
+        var configs = AxisConfig.CreateDefaults();
+        configs[3].FillMode = AxisFillMode.Grind; // R2 = Grind
+        _sut.SetAxisConfigs(configs);
+
+        // External L0 at bottom (0%) → Grind should output near max pitch
+        _sut.SetExternalPositions(new Dictionary<string, double> { ["L0"] = 0.0 });
+        _sut.SetPlaying(true);
+
+        _sut.Start();
+        Thread.Sleep(200);
+        _sut.StopTimer();
+
+        var r2Commands = _transport.SentMessages
+            .SelectMany(m => m.Split(' '))
+            .Where(p => p.StartsWith("R2"))
+            .ToList();
+        Assert.True(r2Commands.Count > 0, "Expected R2 commands from Grind fill");
+
+        // Grind with L0 at 0: pitch should be near PitchFillMaxPosition (70%)
+        // TCode for 70% ≈ 699, may be lower during ramp-up but should be > midpoint (500)
+        var lastR2 = r2Commands.Last();
+        var lastValue = int.Parse(lastR2.Substring(2, 3));
+        Assert.True(lastValue > 500, $"Grind R2 should move above 500 when L0 at bottom, got {lastValue}");
+    }
+
+    [Fact]
+    public void ExternalPositions_SyncWithStroke_WorksWithExternalL0()
+    {
+        // SyncWithStroke fills should track external L0 position changes
+        var configs = AxisConfig.CreateDefaults();
+        configs[1].FillMode = AxisFillMode.Triangle; // R0 = Triangle
+        configs[1].SyncWithStroke = true;
+        _sut.SetAxisConfigs(configs);
+
+        // Simulate external L0 moving: position changes between ticks
+        _sut.SetExternalPositions(new Dictionary<string, double> { ["L0"] = 10.0 });
+        _sut.SetPlaying(true);
+
+        _sut.Start();
+        Thread.Sleep(50);
+
+        // Move L0 so cumulative stroke distance increases
+        _sut.SetExternalPositions(new Dictionary<string, double> { ["L0"] = 90.0 });
+        Thread.Sleep(150);
+        _sut.StopTimer();
+
+        // R0 should have received fill-mode output since stroke is active (hasStrokeScript = true)
+        var hasR0 = _transport.SentMessages.Any(m => m.Contains("R0"));
+        Assert.True(hasR0, "SyncWithStroke fill should produce output when external L0 is active");
+    }
+
+    [Fact]
+    public void ExternalPositions_Cleared_FallsBackToScript()
+    {
+        var configs = AxisConfig.CreateDefaults();
+        _sut.SetAxisConfigs(configs);
+
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(10000, 100) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(5000);
+
+        // Start with external positions
+        _sut.SetExternalPositions(new Dictionary<string, double> { ["L0"] = 10.0 });
+
+        _sut.Start();
+        Thread.Sleep(100);
+
+        // Clear external positions
+        _sut.SetExternalPositions(null);
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        // Should have received L0 output from both phases
+        Assert.True(_transport.SentMessages.Count > 0);
+        Assert.True(_transport.SentMessages.Any(m => m.Contains("L0")));
+    }
+
     // ===== Mock Transport =====
 
     private class MockTransport : ITransportService

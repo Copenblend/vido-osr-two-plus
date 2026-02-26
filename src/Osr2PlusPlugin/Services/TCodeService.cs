@@ -407,7 +407,8 @@ public class TCodeService : IDisposable
                     lock (_testLock) hasTestAxes = _testingAxes.Count > 0;
 
                     bool hasFillOrReturn = HasActiveFillModes();
-                    if (_isPlaying || hasFillOrReturn || hasTestAxes)
+                    bool hasExternalPositions = _externalPositions != null;
+                    if (_isPlaying || hasFillOrReturn || hasTestAxes || hasExternalPositions)
                     {
                         OutputTick(elapsedSec, hasTestAxes);
                     }
@@ -471,6 +472,17 @@ public class TCodeService : IDisposable
         {
             strokePosition = _interpolation.GetPosition(strokeScript, currentTimeMs, "L0");
             hasStrokeScript = true;
+        }
+        else
+        {
+            // When an external source (e.g. Pulse) drives L0, use its position
+            // for stroke tracking so fill modes (Grind, Figure8, SyncWithStroke) work.
+            var extPos = _externalPositions;
+            if (strokeConfig != null && extPos != null && extPos.TryGetValue("L0", out var extL0))
+            {
+                strokePosition = extL0;
+                hasStrokeScript = true;
+            }
         }
         // Track stroke direction for Figure8 — exponentially smoothed velocity
         var strokeDelta = strokePosition - _lastStrokePosition;
