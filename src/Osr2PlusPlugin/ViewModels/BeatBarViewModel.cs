@@ -50,6 +50,7 @@ public class BeatBarViewModel : INotifyPropertyChanged
         get => _mode;
         set
         {
+            if (value == null!) return;
             if (Set(ref _mode, value))
             {
                 if (!_suppressSave)
