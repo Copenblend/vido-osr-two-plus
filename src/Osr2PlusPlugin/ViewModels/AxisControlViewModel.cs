@@ -25,6 +25,7 @@ public class AxisControlViewModel : INotifyPropertyChanged
     private bool _isDeviceConnected;
     private bool _isTesting;
     private bool _funscriptsSuppressed;
+    private string? _currentVideoPath;
 
     /// <summary>The four axis cards: L0, R0, R1, R2.</summary>
     public ObservableCollection<AxisCardViewModel> AxisCards { get; }
@@ -125,6 +126,8 @@ public class AxisControlViewModel : INotifyPropertyChanged
         if (string.IsNullOrEmpty(videoPath))
             return;
 
+        _currentVideoPath = videoPath;
+
         // When funscripts are suppressed, skip auto-loading entirely
         if (_funscriptsSuppressed)
             return;
@@ -194,6 +197,7 @@ public class AxisControlViewModel : INotifyPropertyChanged
     /// </summary>
     public void ClearScripts()
     {
+        _currentVideoPath = null;
         var remaining = new Dictionary<string, FunscriptData>();
 
         foreach (var card in AxisCards)
@@ -244,6 +248,13 @@ public class AxisControlViewModel : INotifyPropertyChanged
         {
             // Clear all loaded scripts when suppression is activated
             ClearAllScripts();
+        }
+        else
+        {
+            // Suppression lifted — re-load funscripts for the current video
+            // so the BeatBar and haptics resume without requiring a new video load.
+            if (!string.IsNullOrEmpty(_currentVideoPath))
+                LoadScriptsForVideo(_currentVideoPath);
         }
     }
 
