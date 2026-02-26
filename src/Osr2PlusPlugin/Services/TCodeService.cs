@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Osr2PlusPlugin.Models;
+using Vido.Haptics;
 
 namespace Osr2PlusPlugin.Services;
 
@@ -35,6 +36,9 @@ public class TCodeService : IDisposable
     private Dictionary<string, FunscriptData> _scripts = new();
     private List<AxisConfig> _axisConfigs = new();
     private int _offsetMs;
+
+    // External axis positions (set by plugins via IEventBus, thread-safe via volatile reference swap)
+    private volatile IReadOnlyDictionary<string, double>? _externalPositions;
 
     // Dirty value tracking: only send axes whose TCode value changed
     private readonly Dictionary<string, int> _lastSentValues = new();
@@ -219,6 +223,16 @@ public class TCodeService : IDisposable
     public void SetOffset(int offsetMs)
     {
         _offsetMs = offsetMs;
+    }
+
+    /// <summary>
+    /// Applies external axis positions from an <see cref="ExternalAxisPositionsEvent"/>.
+    /// When set, the specified axes use these positions instead of funscript interpolation.
+    /// Pass null to clear external positions.
+    /// </summary>
+    public void SetExternalPositions(IReadOnlyDictionary<string, double>? positions)
+    {
+        _externalPositions = positions;
     }
 
     // ===== Thread Lifecycle =====
@@ -587,6 +601,19 @@ public class TCodeService : IDisposable
                     _lastSentValues[config.Id] = testTcode;
                 }
                 continue; // Skip normal playback for this axis
+            }
+
+            // === External axis positions: bypass funscript for externally driven axes ===
+            var externalPos = _externalPositions;
+            if (externalPos != null && externalPos.TryGetValue(config.Id, out var extPos))
+            {
+                var extTcode = ApplyPositionOffset(config, PositionToTCode(config, extPos));
+                if (IsDirty(config.Id, extTcode))
+                {
+                    parts.Add(FormatTCodeCommand(config, extTcode, intervalMs));
+                    _lastSentValues[config.Id] = extTcode;
+                }
+                continue;
             }
 
             // Scripted axis: interpolate position from funscript

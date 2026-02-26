@@ -5,6 +5,7 @@ using Osr2PlusPlugin.ViewModels;
 using SkiaSharp;
 using SkiaSharp.Views.Desktop;
 using SkiaSharp.Views.WPF;
+using Vido.Haptics;
 
 namespace Osr2PlusPlugin.Views;
 
@@ -210,6 +211,14 @@ public partial class BeatBarOverlay : UserControl
         if (beats.Count == 0 || width <= 0 || height <= 0)
             return;
 
+        // ── External source rendering delegation ────────────
+        var externalSource = _viewModel.ActiveExternalSource;
+        if (externalSource != null)
+        {
+            PaintExternalSource(canvas, externalSource, width, height, beats, currentTimeMs);
+            return;
+        }
+
         // ── Layout calculations ─────────────────────────────
         float indicatorX = width * IndicatorXRatio;
         float centerY = height / 2f;
@@ -295,6 +304,60 @@ public partial class BeatBarOverlay : UserControl
 
         // ── Draw indicator ring ─────────────────────────────
         canvas.DrawCircle(indicatorX, centerY, scaledIndicatorRadius, _indicatorPaint);
+    }
+
+    // ── External source rendering ──────────────────────────
+
+    /// <summary>
+    /// Renders the beat bar using an external beat source's custom rendering callbacks.
+    /// Draws the shared background and track line, then delegates beat markers and
+    /// indicator to the external source.
+    /// </summary>
+    private void PaintExternalSource(
+        SKCanvas canvas, IExternalBeatSource source,
+        float width, float height, List<double> beats, double currentTimeMs)
+    {
+        float indicatorX = width * IndicatorXRatio;
+        float centerY = height / 2f;
+
+        // Background
+        const float cornerRadius = 4f;
+        canvas.DrawRoundRect(0, 0, width, height, cornerRadius, cornerRadius, _backgroundPaint);
+
+        // Track line
+        canvas.DrawLine(0, centerY, width, centerY, _trackLinePaint);
+
+        // Time window
+        double timeAtLeft = currentTimeMs - IndicatorXRatio * TimeWindowMs;
+        double timeAtRight = currentTimeMs + (1.0 - IndicatorXRatio) * TimeWindowMs;
+
+        // Hit intensity for animation progress
+        double closestDist = double.MaxValue;
+        int nearIdx = BinarySearchStart(beats, currentTimeMs - GlowThresholdMs);
+        for (int j = Math.Max(0, nearIdx - 1); j < beats.Count; j++)
+        {
+            double bMs = beats[j];
+            if (bMs > currentTimeMs + GlowThresholdMs) break;
+            double d = Math.Abs(bMs - currentTimeMs);
+            if (d < closestDist) closestDist = d;
+        }
+        float progress = closestDist <= GlowThresholdMs
+            ? 1f - (float)(closestDist / GlowThresholdMs) : 0f;
+        float size = BeatRadius * 2f;
+
+        // Draw each visible beat via external source
+        int startIdx = BinarySearchStart(beats, timeAtLeft);
+        for (int i = startIdx; i < beats.Count; i++)
+        {
+            double beatMs = beats[i];
+            if (beatMs > timeAtRight) break;
+            float x = (float)((beatMs - timeAtLeft) / (timeAtRight - timeAtLeft) * width);
+            float beatProgress = Math.Abs(beatMs - currentTimeMs) <= GlowThresholdMs ? progress : 0f;
+            source.RenderBeat(canvas, x, centerY, size, beatProgress);
+        }
+
+        // Draw indicator via external source
+        source.RenderIndicator(canvas, indicatorX, centerY, IndicatorOuterRadius * 2f);
     }
 
     // ── Binary search ────────────────────────────────────────

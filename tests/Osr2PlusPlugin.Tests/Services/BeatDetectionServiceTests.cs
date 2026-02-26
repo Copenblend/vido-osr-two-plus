@@ -28,7 +28,7 @@ public class BeatDetectionServiceTests
         var script = MakeScript(
             (0, 0), (100, 80), (200, 20), (300, 90), (400, 10));
 
-        var result = _sut.DetectBeats(script, BeatBarMode.OnPeak);
+        var result = _sut.DetectBeats(script, BeatDetectionMode.OnPeak);
 
         Assert.Equal(new double[] { 100, 300 }, result);
     }
@@ -39,7 +39,7 @@ public class BeatDetectionServiceTests
         var script = MakeScript(
             (0, 50), (100, 80), (200, 20), (300, 90), (400, 10));
 
-        var result = _sut.DetectBeats(script, BeatBarMode.OnPeak);
+        var result = _sut.DetectBeats(script, BeatDetectionMode.OnPeak);
 
         Assert.DoesNotContain(200, result);
         Assert.DoesNotContain(400, result);
@@ -54,7 +54,7 @@ public class BeatDetectionServiceTests
         var script = MakeScript(
             (0, 50), (100, 80), (200, 20), (300, 90), (400, 10), (500, 60));
 
-        var result = _sut.DetectBeats(script, BeatBarMode.OnValley);
+        var result = _sut.DetectBeats(script, BeatDetectionMode.OnValley);
 
         Assert.Equal(new double[] { 200, 400 }, result);
     }
@@ -65,23 +65,10 @@ public class BeatDetectionServiceTests
         var script = MakeScript(
             (0, 50), (100, 80), (200, 20), (300, 90), (400, 10), (500, 60));
 
-        var result = _sut.DetectBeats(script, BeatBarMode.OnValley);
+        var result = _sut.DetectBeats(script, BeatDetectionMode.OnValley);
 
         Assert.DoesNotContain(100, result);
         Assert.DoesNotContain(300, result);
-    }
-
-    // ── Off mode ─────────────────────────────────────────────
-
-    [Fact]
-    public void DetectBeats_Off_ReturnsEmpty()
-    {
-        var script = MakeScript(
-            (0, 0), (100, 80), (200, 20), (300, 90), (400, 10));
-
-        var result = _sut.DetectBeats(script, BeatBarMode.Off);
-
-        Assert.Empty(result);
     }
 
     // ── Null / empty input ───────────────────────────────────
@@ -89,7 +76,7 @@ public class BeatDetectionServiceTests
     [Fact]
     public void DetectBeats_NullScript_ReturnsEmpty()
     {
-        var result = _sut.DetectBeats(null, BeatBarMode.OnPeak);
+        var result = _sut.DetectBeats(null, BeatDetectionMode.OnPeak);
 
         Assert.Empty(result);
     }
@@ -105,8 +92,8 @@ public class BeatDetectionServiceTests
             .ToArray();
         var script = MakeScript(actions);
 
-        var peakResult = _sut.DetectBeats(script, BeatBarMode.OnPeak);
-        var valleyResult = _sut.DetectBeats(script, BeatBarMode.OnValley);
+        var peakResult = _sut.DetectBeats(script, BeatDetectionMode.OnPeak);
+        var valleyResult = _sut.DetectBeats(script, BeatDetectionMode.OnValley);
 
         Assert.Empty(peakResult);
         Assert.Empty(valleyResult);
@@ -120,7 +107,7 @@ public class BeatDetectionServiceTests
         var script = MakeScript(
             (0, 0), (100, 25), (200, 50), (300, 75), (400, 100));
 
-        var result = _sut.DetectBeats(script, BeatBarMode.OnPeak);
+        var result = _sut.DetectBeats(script, BeatDetectionMode.OnPeak);
 
         Assert.Empty(result);
     }
@@ -131,7 +118,7 @@ public class BeatDetectionServiceTests
         var script = MakeScript(
             (0, 100), (100, 75), (200, 50), (300, 25), (400, 0));
 
-        var result = _sut.DetectBeats(script, BeatBarMode.OnValley);
+        var result = _sut.DetectBeats(script, BeatDetectionMode.OnValley);
 
         Assert.Empty(result);
     }
@@ -145,7 +132,7 @@ public class BeatDetectionServiceTests
         var script = MakeScript(
             (0, 0), (100, 80), (200, 80), (300, 20));
 
-        var result = _sut.DetectBeats(script, BeatBarMode.OnPeak);
+        var result = _sut.DetectBeats(script, BeatDetectionMode.OnPeak);
 
         Assert.Equal(new double[] { 100 }, result);
     }
@@ -157,7 +144,7 @@ public class BeatDetectionServiceTests
         var script = MakeScript(
             (0, 80), (100, 10), (200, 10), (300, 70));
 
-        var result = _sut.DetectBeats(script, BeatBarMode.OnValley);
+        var result = _sut.DetectBeats(script, BeatDetectionMode.OnValley);
 
         Assert.Equal(new double[] { 100 }, result);
     }
@@ -172,7 +159,7 @@ public class BeatDetectionServiceTests
             (0, 0), (100, 90), (200, 10), (300, 80),
             (400, 5), (500, 95), (600, 15), (700, 70));
 
-        var result = _sut.DetectBeats(script, BeatBarMode.OnPeak);
+        var result = _sut.DetectBeats(script, BeatDetectionMode.OnPeak);
 
         for (int i = 1; i < result.Count; i++)
         {
@@ -198,8 +185,8 @@ public class BeatDetectionServiceTests
             (1750, 92),  // peak
             (2000, 8));
 
-        var peaks = _sut.DetectBeats(script, BeatBarMode.OnPeak);
-        var valleys = _sut.DetectBeats(script, BeatBarMode.OnValley);
+        var peaks = _sut.DetectBeats(script, BeatDetectionMode.OnPeak);
+        var valleys = _sut.DetectBeats(script, BeatDetectionMode.OnValley);
 
         Assert.Equal(new double[] { 250, 750, 1250, 1750 }, peaks);
         Assert.Equal(new double[] { 500, 1000, 1500 }, valleys);
@@ -219,7 +206,7 @@ public class BeatDetectionServiceTests
             (1200, 10),  // valley
             (1400, 80));
 
-        var result = _sut.DetectBeats(script, BeatBarMode.OnValley);
+        var result = _sut.DetectBeats(script, BeatDetectionMode.OnValley);
 
         Assert.Equal(new double[] { 400, 800, 1200 }, result);
     }

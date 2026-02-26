@@ -9,14 +9,33 @@ public class BeatBarModeDisplayConverterTests
 {
     private readonly BeatBarModeDisplayConverter _sut = new();
 
-    [Theory]
-    [InlineData(BeatBarMode.Off, "No Beat Bar")]
-    [InlineData(BeatBarMode.OnPeak, "On Peak")]
-    [InlineData(BeatBarMode.OnValley, "On Valley")]
-    public void Convert_ReturnsExpectedDisplayString(BeatBarMode mode, string expected)
+    [Fact]
+    public void Convert_Off_ReturnsNoBeatBar()
     {
+        var result = _sut.Convert(BeatBarMode.Off, typeof(string), null!, CultureInfo.InvariantCulture);
+        Assert.Equal("No Beat Bar", result);
+    }
+
+    [Fact]
+    public void Convert_OnPeak_ReturnsOnPeak()
+    {
+        var result = _sut.Convert(BeatBarMode.OnPeak, typeof(string), null!, CultureInfo.InvariantCulture);
+        Assert.Equal("On Peak", result);
+    }
+
+    [Fact]
+    public void Convert_OnValley_ReturnsOnValley()
+    {
+        var result = _sut.Convert(BeatBarMode.OnValley, typeof(string), null!, CultureInfo.InvariantCulture);
+        Assert.Equal("On Valley", result);
+    }
+
+    [Fact]
+    public void Convert_ExternalMode_ReturnsDisplayName()
+    {
+        var mode = BeatBarMode.CreateExternal("pulse", "Pulse Beats");
         var result = _sut.Convert(mode, typeof(string), null!, CultureInfo.InvariantCulture);
-        Assert.Equal(expected, result);
+        Assert.Equal("Pulse Beats", result);
     }
 
     [Fact]

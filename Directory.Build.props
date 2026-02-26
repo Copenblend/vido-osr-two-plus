@@ -1,9 +1,10 @@
 <Project>
   <PropertyGroup>
-    <PluginVersion>3.0.0</PluginVersion>
+    <PluginVersion>4.0.0</PluginVersion>
   </PropertyGroup>
   <PropertyGroup>
-    <VidoCoreVersion>0.7.0</VidoCoreVersion>
+    <VidoCoreVersion>0.9.0</VidoCoreVersion>
+    <VidoHapticsVersion>1.0.0</VidoHapticsVersion>
     <SystemIOPortsVersion>8.*</SystemIOPortsVersion>
     <SkiaSharpVersion>2.*</SkiaSharpVersion>
     <SkiaSharpViewsWpfVersion>2.*</SkiaSharpViewsWpfVersion>

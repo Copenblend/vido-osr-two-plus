@@ -11,6 +11,7 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Vido.Core" Version="$(VidoCoreVersion)" />
+    <PackageReference Include="Vido.Haptics" Version="$(VidoHapticsVersion)" />
     <PackageReference Include="System.IO.Ports" Version="$(SystemIOPortsVersion)" />
     <PackageReference Include="SkiaSharp" Version="$(SkiaSharpVersion)" />
     <PackageReference Include="SkiaSharp.Views.WPF" Version="$(SkiaSharpViewsWpfVersion)" />

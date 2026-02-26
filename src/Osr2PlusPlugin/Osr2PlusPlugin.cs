@@ -7,6 +7,7 @@ using Osr2PlusPlugin.Models;
 using Osr2PlusPlugin.Services;
 using Osr2PlusPlugin.ViewModels;
 using Osr2PlusPlugin.Views;
+using Vido.Haptics;
 
 namespace Osr2PlusPlugin;
 
@@ -84,7 +85,7 @@ public class Osr2PlusPlugin : IVidoPlugin
         _tcode = new TCodeService(_interpolation);
 
         // ── Create ViewModels ────────────────────────────────
-        _sidebarVm = new SidebarViewModel(_tcode, context.Settings);
+        _sidebarVm = new SidebarViewModel(_tcode, context.Settings, context.Events);
         _axisControlVm = new AxisControlViewModel(_tcode, context.Settings, _parser, _matcher);
         _visualizerVm = new VisualizerViewModel(context.Settings);
 
@@ -144,6 +145,38 @@ public class Osr2PlusPlugin : IVidoPlugin
         {
             context.ToggleControlBarOverlay("beat-bar", mode != BeatBarMode.Off);
         };
+
+        // ── Haptic Event Bus Wiring ──────────────────────────
+
+        // Subscribe: external beat source registration → BeatBarViewModel
+        _subscriptions.Add(context.Events.Subscribe<ExternalBeatSourceRegistration>(
+            reg => _beatBarVm.OnBeatSourceRegistration(reg)));
+
+        // Subscribe: external beat events → BeatBarViewModel
+        _subscriptions.Add(context.Events.Subscribe<ExternalBeatEvent>(
+            evt => _beatBarVm.OnExternalBeatEvent(evt)));
+
+        // Subscribe: funscript suppression → AxisControlViewModel
+        _subscriptions.Add(context.Events.Subscribe<SuppressFunscriptEvent>(
+            evt => _axisControlVm.OnSuppressFunscript(evt)));
+
+        // Subscribe: external axis positions → TCodeService
+        _subscriptions.Add(context.Events.Subscribe<ExternalAxisPositionsEvent>(
+            evt => _tcode.SetExternalPositions(evt.Positions)));
+
+        // Publish: script changes → HapticScriptsChangedEvent
+        _axisControlVm.ScriptsChanged += scripts =>
+        {
+            context.Events.Publish(new HapticScriptsChangedEvent
+            {
+                HasAnyScripts = scripts.Count > 0,
+                AxisScriptLoaded = scripts.Keys.ToDictionary(k => k, _ => true),
+            });
+        };
+
+        // Publish: axis config changes → HapticAxisConfigEvent
+        PublishAxisConfig(context);
+        _axisControlVm.AxisConfigChanged += () => PublishAxisConfig(context);
 
         // Wire file dialog factory for manual script loading
         foreach (var card in _axisControlVm.AxisCards)
@@ -351,6 +384,27 @@ public class Osr2PlusPlugin : IVidoPlugin
         {
             _context?.Logger.Error($"Quick connect error: {ex.Message}", "OSR2+");
         }
+    }
+
+    // ── Haptic Axis Config Publishing ──────────────────────
+
+    /// <summary>
+    /// Publishes the current axis configurations as a <see cref="HapticAxisConfigEvent"/>
+    /// so other plugins can read axis constraints.
+    /// </summary>
+    private void PublishAxisConfig(IPluginContext context)
+    {
+        if (_axisControlVm == null) return;
+
+        var snapshots = _axisControlVm.AxisCards.Select(card => new HapticAxisSnapshot
+        {
+            Id = card.AxisId,
+            Min = card.Min,
+            Max = card.Max,
+            Enabled = card.Enabled,
+        }).ToList();
+
+        context.Events.Publish(new HapticAxisConfigEvent { Axes = snapshots });
     }
 
     // ── Native library loading ─────────────────────────────
