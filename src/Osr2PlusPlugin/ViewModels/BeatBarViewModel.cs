@@ -38,6 +38,14 @@ public class BeatBarViewModel : INotifyPropertyChanged
     // because external sources register after the ViewModel is constructed.
     private string? _pendingExternalModeId;
 
+    // Saved built-in mode before switching to an external source, so we can
+    // restore it when the external source goes away (e.g. Pulse disabled).
+    private BeatBarMode? _preExternalMode;
+
+    // Saved external mode ID so we can restore the correct external mode
+    // when external sources re-register (e.g. Pulse toggled off then on).
+    private string? _savedExternalModeId;
+
     // ── Properties ───────────────────────────────────────────
 
     /// <summary>
@@ -55,10 +63,29 @@ public class BeatBarViewModel : INotifyPropertyChanged
         set
         {
             if (value == null!) return;
+            var previousMode = _mode;
             if (Set(ref _mode, value))
             {
                 if (!_suppressSave)
                     _settings.Set("beatBarMode", value.ToString());
+
+                // Save the built-in mode before switching to an external source
+                // so we can restore it when the external source goes away.
+                // Don't overwrite if already saved (e.g. from RebuildAvailableModes
+                // hiding built-in modes before the external mode is selected).
+                if (value.IsExternal && !previousMode.IsExternal && _preExternalMode == null)
+                    _preExternalMode = previousMode;
+                else if (!value.IsExternal)
+                    _preExternalMode = null;
+
+                // Track the last-selected external mode so we restore the
+                // correct one when external sources re-register.
+                // Clear when the user explicitly switches to Off from an
+                // external mode — they don't want auto-reselection.
+                if (value.IsExternal)
+                    _savedExternalModeId = value.Id;
+                else if (previousMode.IsExternal && value == BeatBarMode.Off)
+                    _savedExternalModeId = null;
 
                 if (!value.IsExternal)
                     RedetectBeats();
@@ -248,15 +275,80 @@ public class BeatBarViewModel : INotifyPropertyChanged
         foreach (var source in _externalSources.Where(s => s.IsAvailable))
             AvailableModes.Add(BeatBarMode.CreateExternal(source.Id, source.DisplayName));
 
-        // If current mode was removed, revert to Off
-        if (!AvailableModes.Any(m => m == _mode))
+        // If current mode was removed, restore the pre-external built-in mode
+        // (or fall back to Off). Otherwise, replace _mode with the new instance
+        // from the rebuilt collection so the WPF ComboBox's SelectedItem matches.
+        var matchingMode = AvailableModes.FirstOrDefault(m => m == _mode);
+        if (matchingMode is null)
         {
-            Mode = BeatBarMode.Off;
+            // If the current mode is a built-in mode being hidden because an
+            // external source is taking over, save it so we can restore later.
+            if (!_mode.IsExternal && _mode != BeatBarMode.Off && _preExternalMode == null)
+                _preExternalMode = _mode;
+
+            // Try restoring the saved built-in mode from before external activation
+            var restore = _preExternalMode != null
+                ? AvailableModes.FirstOrDefault(m => m == _preExternalMode)
+                : null;
+            if (restore != null)
+            {
+                _preExternalMode = null;
+                Mode = restore;
+            }
+            else
+            {
+                // Fall back to Off without clearing _preExternalMode —
+                // the saved mode should persist until the external source
+                // goes away and built-in modes are available again.
+                _mode = BeatBarMode.Off;
+                _settings.Set("beatBarMode", _mode.ToString());
+                RedetectBeats();
+                OnPropertyChanged(nameof(Mode));
+                OnPropertyChanged(nameof(IsActive));
+                OnPropertyChanged(nameof(IsExternalMode));
+                ModeChanged?.Invoke(_mode);
+                RepaintRequested?.Invoke();
+
+                // When an external source hides built-in modes, auto-select
+                // the previously-selected external mode (or the first available).
+                if (hideBuiltIn)
+                {
+                    var autoSelect = _savedExternalModeId != null
+                        ? AvailableModes.FirstOrDefault(m => m.Id == _savedExternalModeId)
+                        : null;
+                    if (autoSelect != null)
+                    {
+                        Mode = autoSelect;
+                    }
+                    else
+                    {
+                        // Preferred mode not available yet; fall back to first
+                        // external but preserve the saved ID for later.
+                        var savedId = _savedExternalModeId;
+                        autoSelect = AvailableModes.FirstOrDefault(m => m.IsExternal);
+                        if (autoSelect != null)
+                            Mode = autoSelect;
+                        _savedExternalModeId = savedId;
+                    }
+                }
+            }
         }
         else
         {
-            // Mode is still valid — refresh IsActive in case beats changed
+            _mode = matchingMode;
+            OnPropertyChanged(nameof(Mode));
             OnPropertyChanged(nameof(IsActive));
+            OnPropertyChanged(nameof(IsExternalMode));
+
+            // If an external source hides built-in modes and a preferred
+            // external mode just became available (but we're on a different
+            // external from a fallback auto-select), switch to the preferred one.
+            if (hideBuiltIn && _savedExternalModeId != null && _mode.Id != _savedExternalModeId)
+            {
+                var preferred = AvailableModes.FirstOrDefault(m => m.Id == _savedExternalModeId);
+                if (preferred != null)
+                    Mode = preferred;
+            }
         }
 
         // Auto-select a deferred external mode that was persisted from a previous session
