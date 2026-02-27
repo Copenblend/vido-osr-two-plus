@@ -289,6 +289,10 @@ public class Osr2PlusPlugin : IVidoPlugin
             _tcode.SetPlaying(false);
             _axisControlVm.SetVideoPlaying(false);
             _visualizerVm?.ClearAxes();
+
+            // Recenter device to home position (respects per-axis position offsets)
+            _tcode.HomeAxes();
+            _context?.Logger.Debug("Device recentered after video unload", "OSR2+");
         }
         catch (Exception ex)
         {
@@ -307,6 +311,13 @@ public class Osr2PlusPlugin : IVidoPlugin
             var isPlaying = e.State == Vido.Core.Playback.PlaybackState.Playing;
             _tcode.SetPlaying(isPlaying);
             _axisControlVm.SetVideoPlaying(isPlaying);
+
+            // Recenter device when playback stops
+            if (e.State == Vido.Core.Playback.PlaybackState.Stopped)
+            {
+                _tcode.HomeAxes();
+                _context?.Logger.Debug("Device recentered on stop", "OSR2+");
+            }
         }
         catch (Exception ex)
         {

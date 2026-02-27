@@ -172,6 +172,17 @@ public class Osr2PlusPluginEventTests : IDisposable
         Assert.Null(exception);
     }
 
+    [Fact]
+    public void VideoUnloaded_LogsRecenter()
+    {
+        ActivatePlugin();
+
+        _eventBus.Publish(new VideoUnloadedEvent());
+
+        _mockLogger.Verify(l => l.Debug(
+            It.Is<string>(s => s.Contains("recentered")), "OSR2+"), Times.AtLeastOnce);
+    }
+
     // ═══════════════════════════════════════════════════════
     //  PlaybackStateChangedEvent
     // ═══════════════════════════════════════════════════════
@@ -214,6 +225,42 @@ public class Osr2PlusPluginEventTests : IDisposable
         _eventBus.Publish(e);
 
         _mockLogger.Verify(l => l.Debug(It.Is<string>(s => s.Contains("Stopped")), "OSR2+"), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public void PlaybackStateChanged_Stopped_LogsRecenter()
+    {
+        ActivatePlugin();
+        var e = new PlaybackStateChangedEvent { State = PlaybackState.Stopped };
+
+        _eventBus.Publish(e);
+
+        _mockLogger.Verify(l => l.Debug(
+            It.Is<string>(s => s.Contains("recentered")), "OSR2+"), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public void PlaybackStateChanged_Playing_DoesNotLogRecenter()
+    {
+        ActivatePlugin();
+        var e = new PlaybackStateChangedEvent { State = PlaybackState.Playing };
+
+        _eventBus.Publish(e);
+
+        _mockLogger.Verify(l => l.Debug(
+            It.Is<string>(s => s.Contains("recentered")), "OSR2+"), Times.Never);
+    }
+
+    [Fact]
+    public void PlaybackStateChanged_Paused_DoesNotLogRecenter()
+    {
+        ActivatePlugin();
+        var e = new PlaybackStateChangedEvent { State = PlaybackState.Paused };
+
+        _eventBus.Publish(e);
+
+        _mockLogger.Verify(l => l.Debug(
+            It.Is<string>(s => s.Contains("recentered")), "OSR2+"), Times.Never);
     }
 
     [Fact]
