@@ -116,6 +116,10 @@ public class TCodeService : IDisposable
         _lastStrokePosition = 50.0;
         _cumulativeFillTime.Clear();
         foreach (var gen in _randomGenerators.Values) gen.Reset();
+
+        // Clear stale external positions so the output loop falls back to
+        // funscript interpolation (fixes Pulse → Funscript switching).
+        _externalPositions = null;
     }
 
     /// <summary>
@@ -231,6 +235,15 @@ public class TCodeService : IDisposable
     public void SetExternalPositions(IReadOnlyDictionary<string, double>? positions)
     {
         _externalPositions = positions;
+    }
+
+    /// <summary>
+    /// Clears any external axis positions so the output loop falls back to
+    /// funscript interpolation.
+    /// </summary>
+    public void ClearExternalPositions()
+    {
+        _externalPositions = null;
     }
 
     // ===== Thread Lifecycle =====

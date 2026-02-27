@@ -1460,6 +1460,62 @@ public class TCodeServiceTests : IDisposable
         Assert.True(_transport.SentMessages.Any(m => m.Contains("L0")));
     }
 
+    // ===== vido-004: Pulse → Funscript Switching =====
+
+    [Fact]
+    public void SetScripts_ClearsExternalPositions()
+    {
+        // Simulate Pulse active: external positions are set
+        _sut.SetExternalPositions(new Dictionary<string, double> { ["L0"] = 75.0 });
+
+        // Now scripts are reloaded (as happens when suppression is lifted)
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(10000, 100) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(5000);
+
+        _sut.Start();
+        Thread.Sleep(200);
+        _sut.StopTimer();
+
+        // After SetScripts, external positions should be cleared and
+        // the output loop should use funscript interpolation → L0 output produced
+        Assert.True(_transport.SentMessages.Count > 0, "Expected TCode output after SetScripts clears external positions");
+        Assert.True(_transport.SentMessages.Any(m => m.Contains("L0")), "Expected L0 output from funscript interpolation");
+    }
+
+    [Fact]
+    public void ClearExternalPositions_AllowsFunscriptResumption()
+    {
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(10000, 100) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(5000);
+
+        // Drive via external positions (Pulse active)
+        _sut.SetExternalPositions(new Dictionary<string, double> { ["L0"] = 10.0 });
+
+        _sut.Start();
+        Thread.Sleep(100);
+
+        _transport.SentMessages.Clear();
+
+        // Clear external positions (Pulse disabled)
+        _sut.ClearExternalPositions();
+        Thread.Sleep(200);
+        _sut.StopTimer();
+
+        // Should now produce output from funscript interpolation
+        Assert.True(_transport.SentMessages.Count > 0, "Expected TCode output after ClearExternalPositions");
+        Assert.True(_transport.SentMessages.Any(m => m.Contains("L0")), "Expected L0 from funscript interpolation after clearing external positions");
+    }
+
     // ===== Mock Transport =====
 
     private class MockTransport : ITransportService
