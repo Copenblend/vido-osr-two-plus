@@ -45,8 +45,8 @@ public class TCodeService : IDisposable
 
     // ===== Fill Mode State =====
 
-    /// <summary>Maximum position (0–100) for any pitch (R2) fill mode. Safety cap to prevent device damage.</summary>
-    internal const double PitchFillMaxPosition = 70.0;
+    /// <summary>Maximum position (0–100) for any pitch (R2) fill mode.</summary>
+    internal const double PitchFillMaxPosition = 100.0;
 
     // Random pattern generators — one per axis
     private readonly Dictionary<string, RandomPatternGenerator> _randomGenerators = new();
@@ -862,7 +862,7 @@ public class TCodeService : IDisposable
 
     /// <summary>
     /// Clamps the fill-mode position to 0–<see cref="PitchFillMaxPosition"/> for pitch (R2) axes.
-    /// Non-pitch axes are returned unchanged. This prevents device damage from excessive pitch travel.
+    /// Non-pitch axes are returned unchanged.
     /// </summary>
     internal static double ClampPitchFillPosition(AxisConfig config, double position)
     {

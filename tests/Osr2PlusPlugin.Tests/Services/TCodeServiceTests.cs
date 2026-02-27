@@ -631,12 +631,12 @@ public class TCodeServiceTests : IDisposable
     }
 
     [Fact]
-    public void FillMode_Grind_CappedTo70_WhenStrokeAtBottom()
+    public void FillMode_Grind_UsesFullRange_WhenStrokeAtBottom()
     {
-        // When stroke is at 0 (bottom), Grind should output max pitch = PitchFillMaxPosition (70)
+        // When stroke is at 0 (bottom), Grind should output max pitch = PitchFillMaxPosition (100)
         var configs = AxisConfig.CreateDefaults();
         configs[3].FillMode = AxisFillMode.Grind; // R2 = Grind
-        configs[3].Max = 100; // User sets max to 100, but pitch fill cap limits to 70
+        configs[3].Max = 100; // Full range — no longer limited by PitchFillMaxPosition
         _sut.SetAxisConfigs(configs);
 
         var scripts = new Dictionary<string, FunscriptData>
@@ -651,9 +651,7 @@ public class TCodeServiceTests : IDisposable
         Thread.Sleep(200);
         _sut.StopTimer();
 
-        // R2 output should be capped at PitchFillMaxPosition (70%), not go up to config.Max (100)
-        // TCode for 70% = (int)(70 / 100.0 * 999) = 699
-        // During ramp-up values move from 500 toward 699, all ≤ 699
+        // R2 output should be within 0–999 (PitchFillMaxPosition is now 100)
         var r2Commands = _transport.SentMessages
             .SelectMany(m => m.Split(' '))
             .Where(p => p.StartsWith("R2"))
@@ -662,7 +660,7 @@ public class TCodeServiceTests : IDisposable
         foreach (var cmd in r2Commands)
         {
             var value = int.Parse(cmd.Substring(2, 3));
-            Assert.True(value <= 699, $"Grind R2 value {value} exceeds 70% cap (699)");
+            Assert.True(value <= 999, $"Grind R2 value {value} exceeds max (999)");
         }
     }
 
@@ -701,13 +699,13 @@ public class TCodeServiceTests : IDisposable
     }
 
     [Fact]
-    public void FillMode_Figure8_R2CappedTo70()
+    public void FillMode_Figure8_R2UsesFullRange()
     {
-        // Figure8 on R2 (pitch) should also be capped to PitchFillMaxPosition (70)
+        // Figure8 on R2 (pitch) should use full range (PitchFillMaxPosition is now 100)
         var configs = AxisConfig.CreateDefaults();
         configs[3].FillMode = AxisFillMode.Figure8; // R2 = Figure8
         configs[3].Min = 0;
-        configs[3].Max = 100; // Full range, but pitch cap should limit to 70
+        configs[3].Max = 100; // Full range — no longer limited
         _sut.SetAxisConfigs(configs);
 
         var scripts = new Dictionary<string, FunscriptData>
@@ -731,10 +729,10 @@ public class TCodeServiceTests : IDisposable
             .Select(p => int.Parse(p.Substring(2, 3)))
             .ToList();
         Assert.True(r2Commands.Count > 0);
-        // All R2 values must be ≤ 699 (70% cap)
+        // All R2 values must be ≤ 999 (full range)
         foreach (var value in r2Commands)
         {
-            Assert.True(value <= 699, $"Figure8 R2 value {value} exceeds 70% pitch cap (699)");
+            Assert.True(value <= 999, $"Figure8 R2 value {value} exceeds max (999)");
         }
     }
 
@@ -773,15 +771,15 @@ public class TCodeServiceTests : IDisposable
     }
 
     [Fact]
-    public void PitchFillMaxPosition_Constant_Is70()
+    public void PitchFillMaxPosition_Constant_Is100()
     {
-        Assert.Equal(70.0, TCodeService.PitchFillMaxPosition);
+        Assert.Equal(100.0, TCodeService.PitchFillMaxPosition);
     }
 
     [Fact]
-    public void FillMode_WaveformFill_R2CappedTo70()
+    public void FillMode_WaveformFill_R2UsesFullRange()
     {
-        // Any waveform fill (Triangle, Sine, etc.) on R2 (pitch) must be capped to 70%
+        // Waveform fill (Triangle, Sine, etc.) on R2 (pitch) should use full range (no 70% cap)
         var configs = AxisConfig.CreateDefaults();
         configs[3].FillMode = AxisFillMode.Triangle; // R2 = Triangle
         configs[3].SyncWithStroke = false;
@@ -810,7 +808,7 @@ public class TCodeServiceTests : IDisposable
         Assert.True(r2Commands.Count > 0);
         foreach (var value in r2Commands)
         {
-            Assert.True(value <= 699, $"Triangle R2 value {value} exceeds 70% pitch cap (699)");
+            Assert.True(value <= 999, $"Triangle R2 value {value} exceeds max (999)");
         }
     }
 
@@ -1628,8 +1626,8 @@ public class TCodeServiceTests : IDisposable
             .ToList();
         Assert.True(r2Commands.Count > 0, "Expected R2 commands from Grind fill");
 
-        // Grind with L0 at 0: pitch should be near PitchFillMaxPosition (70%)
-        // TCode for 70% ≈ 699, may be lower during ramp-up but should be > midpoint (500)
+        // Grind with L0 at 0: pitch should be near PitchFillMaxPosition (100%)
+        // TCode for 100% ≈ 999, may be lower during ramp-up but should be > midpoint (500)
         var lastR2 = r2Commands.Last();
         var lastValue = int.Parse(lastR2.Substring(2, 3));
         Assert.True(lastValue > 500, $"Grind R2 should move above 500 when L0 at bottom, got {lastValue}");
