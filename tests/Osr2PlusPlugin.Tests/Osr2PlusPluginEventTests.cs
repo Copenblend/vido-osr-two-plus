@@ -5,6 +5,7 @@ using Vido.Core.Events;
 using Vido.Core.Logging;
 using Vido.Core.Playback;
 using Vido.Core.Plugin;
+using Vido.Haptics;
 using Xunit;
 
 namespace Osr2PlusPlugin.Tests;
@@ -489,6 +490,30 @@ public class Osr2PlusPluginEventTests : IDisposable
                 Duration = TimeSpan.FromSeconds(120)
             }));
         Assert.Null(exception);
+    }
+
+    // ═══════════════════════════════════════════════════════
+    //  vido-005: Auto-switch bottom panel
+    // ═══════════════════════════════════════════════════════
+
+    [Fact]
+    public void SuppressFunscript_Unsuppressed_ShowsFunscriptVisualizer()
+    {
+        ActivatePlugin();
+
+        _eventBus.Publish(new SuppressFunscriptEvent { SuppressFunscripts = false });
+
+        _mockContext.Verify(c => c.RequestShowBottomPanel("osr2-visualizer"), Times.Once);
+    }
+
+    [Fact]
+    public void SuppressFunscript_Suppressed_DoesNotShowVisualizer()
+    {
+        ActivatePlugin();
+
+        _eventBus.Publish(new SuppressFunscriptEvent { SuppressFunscripts = true });
+
+        _mockContext.Verify(c => c.RequestShowBottomPanel("osr2-visualizer"), Times.Never);
     }
 
     // ═══════════════════════════════════════════════════════
