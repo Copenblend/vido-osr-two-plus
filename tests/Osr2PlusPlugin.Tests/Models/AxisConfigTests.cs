@@ -155,19 +155,13 @@ public class AxisConfigTests
     // ── AvailableFillModes ───────────────────────────────────
 
     [Fact]
-    public void AvailableFillModes_R2_IncludesGrindModes()
+    public void AvailableFillModes_AllNonStrokeAxesHave9Modes()
     {
-        var axis = new AxisConfig { Id = "R2" };
-        Assert.Contains(AxisFillMode.Grind, axis.AvailableFillModes);
-        Assert.Contains(AxisFillMode.Figure8, axis.AvailableFillModes);
-    }
-
-    [Fact]
-    public void AvailableFillModes_NonR2_ExcludesGrindModes()
-    {
-        var axis = new AxisConfig { Id = "L0" };
-        Assert.DoesNotContain(AxisFillMode.Grind, axis.AvailableFillModes);
-        Assert.DoesNotContain(AxisFillMode.Figure8, axis.AvailableFillModes);
+        foreach (var id in new[] { "R0", "R1", "R2" })
+        {
+            var axis = new AxisConfig { Id = id };
+            Assert.Equal(9, axis.AvailableFillModes.Length);
+        }
     }
 
     [Fact]

@@ -17,7 +17,6 @@ public class FillModeDisplayConverterTests
     [InlineData(AxisFillMode.Saw, "Saw")]
     [InlineData(AxisFillMode.Square, "Square")]
     [InlineData(AxisFillMode.Pulse, "Pulse")]
-    [InlineData(AxisFillMode.Grind, "Grind")]
     public void Convert_StandardModes_ReturnsEnumName(AxisFillMode mode, string expected)
     {
         var result = _sut.Convert(mode, typeof(string), null!, CultureInfo.InvariantCulture);
@@ -36,13 +35,6 @@ public class FillModeDisplayConverterTests
     {
         var result = _sut.Convert(AxisFillMode.EaseInOut, typeof(string), null!, CultureInfo.InvariantCulture);
         Assert.Equal("Ease In/Out", result);
-    }
-
-    [Fact]
-    public void Convert_Figure8_ReturnsFigureSpace8()
-    {
-        var result = _sut.Convert(AxisFillMode.Figure8, typeof(string), null!, CultureInfo.InvariantCulture);
-        Assert.Equal("Figure 8", result);
     }
 
     [Fact]

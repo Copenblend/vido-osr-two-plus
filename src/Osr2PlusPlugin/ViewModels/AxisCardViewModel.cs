@@ -116,12 +116,6 @@ public class AxisCardViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(ShowFillSpeedSlider));
                 OnPropertyChanged(nameof(IsSyncEditable));
                 RaiseConfigChanged();
-
-                // Auto-select SyncWithStroke for Grind/Figure8 (must stay synced)
-                if (value is AxisFillMode.Grind or AxisFillMode.Figure8 && !SyncWithStroke)
-                {
-                    SyncWithStroke = true;
-                }
             }
         }
     }
@@ -212,8 +206,8 @@ public class AxisCardViewModel : INotifyPropertyChanged
     /// <summary>Whether the fill mode section should be visible (not shown for L0/Stroke).</summary>
     public bool ShowFillMode => !IsStroke;
 
-    /// <summary>Whether the SyncWithStroke checkbox is editable (disabled for Grind/Figure8).</summary>
-    public bool IsSyncEditable => _config.FillMode is not (AxisFillMode.Grind or AxisFillMode.Figure8);
+    /// <summary>Whether the SyncWithStroke checkbox is editable.</summary>
+    public bool IsSyncEditable => true;
 
     /// <summary>Whether the position offset section should be visible (L0, R0, R1, R2).</summary>
     public bool ShowPositionOffset => _config.HasPositionOffset;

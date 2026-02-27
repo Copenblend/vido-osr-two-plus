@@ -135,60 +135,11 @@ public class AxisCardViewModelTests : IDisposable
     }
 
     [Fact]
-    public void AvailableFillModes_TwistDoesNotIncludeGrind()
+    public void AvailableFillModes_AllNonStrokeAxesHaveNineModes()
     {
-        var sut = CreateSut(R0);
-
-        Assert.DoesNotContain(AxisFillMode.Grind, sut.AvailableFillModes);
-        Assert.DoesNotContain(AxisFillMode.Figure8, sut.AvailableFillModes);
-    }
-
-    [Fact]
-    public void AvailableFillModes_RollDoesNotIncludeGrind()
-    {
-        var sut = CreateSut(R1);
-
-        Assert.DoesNotContain(AxisFillMode.Grind, sut.AvailableFillModes);
-    }
-
-    [Fact]
-    public void AvailableFillModes_RollIncludesFigure8()
-    {
-        var sut = CreateSut(R1);
-
-        Assert.Contains(AxisFillMode.Figure8, sut.AvailableFillModes);
-    }
-
-    [Fact]
-    public void AvailableFillModes_RollHasTenModes()
-    {
-        var sut = CreateSut(R1);
-        Assert.Equal(10, sut.AvailableFillModes.Length);
-    }
-
-    [Fact]
-    public void AvailableFillModes_PitchIncludesGrindModes()
-    {
-        var sut = CreateSut(R2);
-
-        Assert.Contains(AxisFillMode.Grind, sut.AvailableFillModes);
-        Assert.Contains(AxisFillMode.Figure8, sut.AvailableFillModes);
-        Assert.Contains(AxisFillMode.None, sut.AvailableFillModes);
-        Assert.Contains(AxisFillMode.Sine, sut.AvailableFillModes);
-    }
-
-    [Fact]
-    public void AvailableFillModes_PitchHasAllElevenModes()
-    {
-        var sut = CreateSut(R2);
-        Assert.Equal(11, sut.AvailableFillModes.Length);
-    }
-
-    [Fact]
-    public void AvailableFillModes_NonPitchNonStrokeHasNineModes()
-    {
-        var sut = CreateSut(R0);
-        Assert.Equal(9, sut.AvailableFillModes.Length);
+        Assert.Equal(9, CreateSut(R0).AvailableFillModes.Length);
+        Assert.Equal(9, CreateSut(R1).AvailableFillModes.Length);
+        Assert.Equal(9, CreateSut(R2).AvailableFillModes.Length);
     }
 
     // ═══════════════════════════════════════════════════════
@@ -209,26 +160,6 @@ public class AxisCardViewModelTests : IDisposable
         var sut = CreateSut(R0);
         sut.FillMode = AxisFillMode.None;
         Assert.True(sut.ShowSyncToggle);
-    }
-
-    [Fact]
-    public void ShowSyncToggle_VisibleForGrind_ButNotEditable()
-    {
-        var sut = CreateSut(R2);
-        sut.FillMode = AxisFillMode.Grind;
-        Assert.True(sut.ShowSyncToggle);
-        Assert.False(sut.IsSyncEditable);
-        Assert.True(sut.SyncWithStroke); // Auto-selected
-    }
-
-    [Fact]
-    public void ShowSyncToggle_VisibleForFigure8_ButNotEditable()
-    {
-        var sut = CreateSut(R2);
-        sut.FillMode = AxisFillMode.Figure8;
-        Assert.True(sut.ShowSyncToggle);
-        Assert.False(sut.IsSyncEditable);
-        Assert.True(sut.SyncWithStroke); // Auto-selected
     }
 
     [Fact]

@@ -3,12 +3,9 @@ using Osr2PlusPlugin.Models;
 namespace Osr2PlusPlugin.Services;
 
 /// <summary>
-/// Static utility for deterministic waveform and position-mapped calculations.
+/// Static utility for deterministic waveform calculations.
 /// Time-based patterns take a normalized time parameter t (0.0–1.0, wrapping)
 /// and return a position value (0.0–1.0).
-/// Position-mapped modes (Grind) take the L0 stroke position
-/// as t (0.0–1.0) and return the mapped position.
-/// Figure8 requires stroke direction — use <see cref="CalculateFigure8"/> instead.
 /// </summary>
 public static class PatternGenerator
 {
@@ -16,20 +13,10 @@ public static class PatternGenerator
     /// Computes a waveform position for the given fill mode.
     /// </summary>
     /// <param name="fillMode">The waveform type.</param>
-    /// <param name="t">Normalized time (0.0–1.0, wrapping modulo 1.0) for waveforms,
-    /// or normalized L0 stroke position (0.0–1.0) for Grind.</param>
+    /// <param name="t">Normalized time (0.0–1.0, wrapping modulo 1.0).</param>
     /// <returns>Position 0.0–1.0</returns>
     public static double Calculate(AxisFillMode fillMode, double t)
     {
-        // Grind uses t as position input (inverse mapping) — clamp rather than wrap
-        if (fillMode == AxisFillMode.Grind)
-            return Math.Clamp(1.0 - t, 0.0, 1.0);
-
-        // Figure8 needs direction info — return midpoint from Calculate;
-        // callers should use CalculateFigure8() directly instead.
-        if (fillMode == AxisFillMode.Figure8)
-            return 0.5;
-
         t = t % 1.0;
         if (t < 0) t += 1.0;
 
@@ -152,40 +139,5 @@ public static class PatternGenerator
             ? 4.0 * phase * phase * phase
             : 1.0 - Math.Pow(-2.0 * phase + 2.0, 3) / 2.0;
         return eased;
-    }
-
-    /// <summary>
-    /// Figure 8: Lissajous figure-8 pitch value as a function of stroke position and direction.
-    /// Uses y(t) = sin(2t) where x(t) = cos(t) defines the stroke.
-    /// The two loops of the 8 are formed by the direction change: pitch tilts one way
-    /// when stroke goes up and the other way when stroke goes down.
-    /// Amplitude uses the full range; the axis Min/Max config controls effective travel.
-    /// </summary>
-    /// <param name="normalizedStrokePosition">Stroke position normalized to 0.0–1.0.</param>
-    /// <param name="direction">Smoothed direction value: positive = going up, negative = going down.
-    /// Magnitude blends the figure-8 amplitude (0 at stroke extremes for smooth transitions).</param>
-    /// <returns>Position 0.0–1.0.</returns>
-    public static double CalculateFigure8(double normalizedStrokePosition, double direction)
-    {
-        // Map 0..1 → -1..1
-        var n = Math.Clamp(normalizedStrokePosition * 2.0 - 1.0, -1.0, 1.0);
-
-        // Lissajous figure-8: y = 2 * x * sqrt(1 - x²)
-        // This is |sin(2t)| when x = cos(t)
-        var figure8 = 2.0 * n * Math.Sqrt(Math.Max(0.0, 1.0 - n * n));
-
-        // Full amplitude — the axis Min/Max config controls effective travel
-        const double amplitudeScale = 1.0;
-        figure8 *= amplitudeScale;
-
-        // Multiply by direction sign to form the two loops.
-        // Using the continuous direction value instead of a boolean
-        // provides smooth transitions at stroke extremes where
-        // direction naturally approaches 0.
-        var dirSign = Math.Clamp(direction, -1.0, 1.0);
-        figure8 *= -dirSign;
-
-        // Map -1..1 → 0..1
-        return Math.Clamp((figure8 + 1.0) / 2.0, 0.0, 1.0);
     }
 }

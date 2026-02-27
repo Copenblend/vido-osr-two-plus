@@ -17,7 +17,6 @@ public class FillModeDisplayConverter : IValueConverter
             {
                 AxisFillMode.SawtoothReverse => "Reverse Saw",
                 AxisFillMode.EaseInOut => "Ease In/Out",
-                AxisFillMode.Figure8 => "Figure 8",
                 _ => mode.ToString()
             };
         }
