@@ -23,18 +23,18 @@ public class AxisConfig : INotifyPropertyChanged
     private bool _syncWithStroke = true;
     private double _fillSpeedHz = 1.0;
 
-    /// <summary>Minimum amplitude (0-100). Must be strictly less than Max.</summary>
+    /// <summary>Minimum amplitude (-50 to 149). Must be strictly less than Max.</summary>
     public int Min
     {
         get => _min;
-        set { if (value < Max && Set(ref _min, Math.Clamp(value, 0, 99))) OnPropertyChanged(nameof(RangeLabel)); }
+        set { if (value < Max && Set(ref _min, Math.Clamp(value, -50, 149))) { OnPropertyChanged(nameof(RangeLabel)); OnPropertyChanged(nameof(IsExtendedRange)); } }
     }
 
-    /// <summary>Maximum amplitude (0-100). Must be strictly greater than Min.</summary>
+    /// <summary>Maximum amplitude (-49 to 150). Must be strictly greater than Min.</summary>
     public int Max
     {
         get => _max;
-        set { if (value > Min && Set(ref _max, Math.Clamp(value, 1, 100))) OnPropertyChanged(nameof(RangeLabel)); }
+        set { if (value > Min && Set(ref _max, Math.Clamp(value, -49, 150))) { OnPropertyChanged(nameof(RangeLabel)); OnPropertyChanged(nameof(IsExtendedRange)); } }
     }
 
     /// <summary>Whether this axis sends TCode instructions to the device.</summary>
@@ -67,6 +67,9 @@ public class AxisConfig : INotifyPropertyChanged
 
     [JsonIgnore]
     public bool IsPitch => Id == "R2";
+
+    [JsonIgnore]
+    public bool IsExtendedRange => Min < 0 || Max > 100;
 
     [JsonIgnore]
     public AxisFillMode[] AvailableFillModes => Id switch
