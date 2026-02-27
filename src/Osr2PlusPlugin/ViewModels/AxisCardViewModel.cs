@@ -215,7 +215,7 @@ public class AxisCardViewModel : INotifyPropertyChanged
     /// <summary>Whether the SyncWithStroke checkbox is editable (disabled for Grind/Figure8).</summary>
     public bool IsSyncEditable => _config.FillMode is not (AxisFillMode.Grind or AxisFillMode.Figure8);
 
-    /// <summary>Whether the position offset section should be visible (L0 and R0 only).</summary>
+    /// <summary>Whether the position offset section should be visible (L0, R0, R1, R2).</summary>
     public bool ShowPositionOffset => _config.HasPositionOffset;
 
     /// <summary>
@@ -226,19 +226,35 @@ public class AxisCardViewModel : INotifyPropertyChanged
         _config.FillMode != AxisFillMode.None
         && (!_config.SyncWithStroke || _config.Id == "L0");
 
-    /// <summary>Formatted position offset label. L0: "{value}%", R0: "{value}°".</summary>
+    /// <summary>Formatted position offset label. L0/R1/R2: "{value}%", R0: "{value}°".</summary>
     public string PositionOffsetLabel => _config.Id switch
     {
         "L0" => $"{_config.PositionOffset:0}%",
         "R0" => $"{_config.PositionOffset:0}°",
+        "R1" => $"{_config.PositionOffset:0}%",
+        "R2" => $"{_config.PositionOffset:0}%",
         _ => ""
     };
 
-    /// <summary>Minimum position offset. L0: -50, R0: 0.</summary>
-    public double PositionOffsetMin => _config.Id == "L0" ? -50.0 : 0.0;
+    /// <summary>Minimum position offset. L0/R1/R2: -50, R0: 0.</summary>
+    public double PositionOffsetMin => _config.Id switch
+    {
+        "L0" => -50.0,
+        "R0" => 0.0,
+        "R1" => -50.0,
+        "R2" => -50.0,
+        _ => 0.0
+    };
 
-    /// <summary>Maximum position offset. L0: +50, R0: 179.</summary>
-    public double PositionOffsetMax => _config.Id == "L0" ? 50.0 : 179.0;
+    /// <summary>Maximum position offset. L0/R1/R2: +50, R0: 179.</summary>
+    public double PositionOffsetMax => _config.Id switch
+    {
+        "L0" => 50.0,
+        "R0" => 179.0,
+        "R1" => 50.0,
+        "R2" => 50.0,
+        _ => 0.0
+    };
 
     /// <summary>Default position offset. L0: 0, R0: 0.</summary>
     public double PositionOffsetDefault => 0.0;

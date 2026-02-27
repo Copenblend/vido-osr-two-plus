@@ -125,12 +125,14 @@ public class AxisConfigTests
     }
 
     [Fact]
-    public void HasPositionOffset_TrueForL0AndR0()
+    public void HasPositionOffset_TrueForL0R0R1R2()
     {
         Assert.True(new AxisConfig { Id = "L0" }.HasPositionOffset);
         Assert.True(new AxisConfig { Id = "R0" }.HasPositionOffset);
-        Assert.False(new AxisConfig { Id = "R1" }.HasPositionOffset);
-        Assert.False(new AxisConfig { Id = "R2" }.HasPositionOffset);
+        Assert.True(new AxisConfig { Id = "R1" }.HasPositionOffset);
+        Assert.True(new AxisConfig { Id = "R2" }.HasPositionOffset);
+        Assert.False(new AxisConfig { Id = "L1" }.HasPositionOffset);
+        Assert.False(new AxisConfig { Id = "L2" }.HasPositionOffset);
     }
 
     // ── AvailableFillModes ───────────────────────────────────

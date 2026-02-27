@@ -216,7 +216,7 @@
                                 VerticalAlignment="Center" />
                     </Grid>
 
-                    <!-- ── 4. Position Offset (L0 and R0 only) ─ -->
+                    <!-- ── 4. Position Offset (L0, R0, R1, R2) ── -->
                     <StackPanel Visibility="{Binding ShowPositionOffset, Converter={StaticResource BoolToVisibility}}">
                         <TextBlock Text="Position Offset"
                                    Foreground="White"

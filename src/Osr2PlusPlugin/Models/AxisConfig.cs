@@ -60,7 +60,7 @@ public class AxisConfig : INotifyPropertyChanged
     public string RangeLabel => $"{Min}-{Max}";
 
     [JsonIgnore]
-    public bool HasPositionOffset => Id is "L0" or "R0";
+    public bool HasPositionOffset => Id is "L0" or "R0" or "R1" or "R2";
 
     [JsonIgnore]
     public bool IsStroke => Id == "L0";
