@@ -388,12 +388,12 @@ public class PatternGeneratorTests
     {
         // Maximum pitch deflection at n = ±1/√2 (stroke ≈ 0.146 or 0.854)
         // n = (0.854 - 0.5)/0.5 ≈ 0.707, raw = 2*0.707*0.707 ≈ 1.0
-        // With 0.6 amplitude scale: peak output = (0.6 + 1) / 2 = 0.8
+        // With 1.0 amplitude scale: peak output = (1.0 + 1) / 2 = 1.0
         var peakHigh = PatternGenerator.CalculateFigure8(0.854, -1.0); // going down
-        Assert.True(peakHigh > 0.75, $"Expected near 0.8, got {peakHigh}");
+        Assert.True(peakHigh > 0.9, $"Expected near 1.0, got {peakHigh}");
 
         var peakLow = PatternGenerator.CalculateFigure8(0.854, 1.0); // going up → mirrored
-        Assert.True(peakLow < 0.25, $"Expected near 0.2, got {peakLow}");
+        Assert.True(peakLow < 0.1, $"Expected near 0.0, got {peakLow}");
     }
 
     [Fact]

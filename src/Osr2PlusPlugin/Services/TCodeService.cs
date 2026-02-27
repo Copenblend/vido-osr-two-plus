@@ -546,13 +546,14 @@ public class TCodeService : IDisposable
                 double position;
                 if (effectiveFillMode == AxisFillMode.Grind)
                 {
-                    // Grind in test mode: simulate stroke with triangle wave, cap output to 0-PitchFillMaxPosition
+                    // Grind in test mode: simulate stroke with triangle wave, use config range
                     var simulatedStroke = PatternGenerator.Calculate(AxisFillMode.Triangle, testState.Phase);
-                    var grindPos = (1.0 - simulatedStroke) * PitchFillMaxPosition;
+                    var range = config.Max - config.Min;
+                    var grindPos = config.Min + range - simulatedStroke * range;
 
                     // Blend with Grind midpoint for ramp-up
                     var grindBlend = Math.Clamp(testState.CurrentAmplitude / 50.0, 0.0, 1.0);
-                    var grindMidpoint = PitchFillMaxPosition / 2.0;
+                    var grindMidpoint = config.Min + range / 2.0;
                     grindPos = grindMidpoint + (grindPos - grindMidpoint) * grindBlend;
 
                     var grindTcode = (int)(grindPos / 100.0 * 999);
@@ -658,20 +659,17 @@ public class TCodeService : IDisposable
                 if (config.FillMode == AxisFillMode.Grind)
                 {
                     // Grind: pitch inversely follows stroke (stroke up → pitch down)
-                    // Capped to 0-PitchFillMaxPosition for device safety
-                    grindPos = PitchFillMaxPosition - (strokePosition / 100.0) * PitchFillMaxPosition;
+                    // Uses the axis config range so Min/Max slider controls amplitude
+                    var range = config.Max - config.Min;
+                    grindPos = config.Min + range - (strokePosition / 100.0) * range;
                 }
                 else // Figure8
                 {
                     // Lissajous figure-8: pitch/roll varies with stroke position and smoothed direction
                     var normalizedStroke = strokePosition / 100.0;
                     var figure8Value = PatternGenerator.CalculateFigure8(normalizedStroke, _smoothStrokeDirection);
-                    // R2 (pitch): cap to PitchFillMaxPosition for safety
-                    // R1 (roll): use full config range
-                    if (config.IsPitch)
-                        grindPos = figure8Value * PitchFillMaxPosition;
-                    else
-                        grindPos = config.Min + figure8Value * (config.Max - config.Min);
+                    // Use config range for all axes (both pitch and roll)
+                    grindPos = config.Min + figure8Value * (config.Max - config.Min);
                 }
 
                 var grindVal = (int)(grindPos / 100.0 * 999);
