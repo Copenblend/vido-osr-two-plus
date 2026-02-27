@@ -293,126 +293,6 @@ public class PatternGeneratorTests
         Assert.Equal(0.5, result, Tolerance);
     }
 
-    // --- Grind (inverted position: stroke up → pitch down) ---
-
-    [Theory]
-    [InlineData(0.0,  1.0)]
-    [InlineData(0.25, 0.75)]
-    [InlineData(0.5,  0.5)]
-    [InlineData(0.75, 0.25)]
-    [InlineData(1.0,  0.0)]
-    public void Grind_InvertsPosition(double strokePos, double expected)
-    {
-        var result = PatternGenerator.Calculate(AxisFillMode.Grind, strokePos);
-        Assert.Equal(expected, result, Tolerance);
-    }
-
-    [Fact]
-    public void Grind_ClampsAbove1()
-    {
-        // 1.0 - 1.5 = -0.5 → clamped to 0.0
-        var result = PatternGenerator.Calculate(AxisFillMode.Grind, 1.5);
-        Assert.Equal(0.0, result, Tolerance);
-    }
-
-    [Fact]
-    public void Grind_ClampsBelow0()
-    {
-        // 1.0 - (-0.3) = 1.3 → clamped to 1.0
-        var result = PatternGenerator.Calculate(AxisFillMode.Grind, -0.3);
-        Assert.Equal(1.0, result, Tolerance);
-    }
-
-    // --- Figure8 (Calculate returns midpoint; use CalculateFigure8 for actual) ---
-
-    [Fact]
-    public void Figure8_Calculate_ReturnsMidpoint()
-    {
-        // PatternGenerator.Calculate cannot compute Figure8 (needs direction)
-        Assert.Equal(0.5, PatternGenerator.Calculate(AxisFillMode.Figure8, 0.0), Tolerance);
-        Assert.Equal(0.5, PatternGenerator.Calculate(AxisFillMode.Figure8, 0.5), Tolerance);
-        Assert.Equal(0.5, PatternGenerator.Calculate(AxisFillMode.Figure8, 1.0), Tolerance);
-    }
-
-    // --- CalculateFigure8 (Lissajous figure-8 with smooth direction) ---
-
-    [Fact]
-    public void Figure8_AtExtremes_ReturnsMidpoint()
-    {
-        // At stroke extremes (0.0 or 1.0), pitch should be at center (0.5)
-        // regardless of direction value
-        Assert.Equal(0.5, PatternGenerator.CalculateFigure8(0.0, 1.0), Tolerance);
-        Assert.Equal(0.5, PatternGenerator.CalculateFigure8(0.0, -1.0), Tolerance);
-        Assert.Equal(0.5, PatternGenerator.CalculateFigure8(1.0, 1.0), Tolerance);
-        Assert.Equal(0.5, PatternGenerator.CalculateFigure8(1.0, -1.0), Tolerance);
-    }
-
-    [Fact]
-    public void Figure8_AtCenter_ReturnsMidpoint()
-    {
-        // At stroke center (0.5), normalized = 0 → figure8 = 0 → midpoint
-        Assert.Equal(0.5, PatternGenerator.CalculateFigure8(0.5, 1.0), Tolerance);
-        Assert.Equal(0.5, PatternGenerator.CalculateFigure8(0.5, -1.0), Tolerance);
-    }
-
-    [Fact]
-    public void Figure8_OppositeDirections_AreMirrored()
-    {
-        // At same stroke position, opposite directions should produce mirrored pitch
-        var up = PatternGenerator.CalculateFigure8(0.75, 1.0);
-        var down = PatternGenerator.CalculateFigure8(0.75, -1.0);
-        Assert.Equal(1.0 - up, down, Tolerance); // Symmetric around 0.5
-    }
-
-    [Fact]
-    public void Figure8_ZeroDirection_ReturnsMidpoint()
-    {
-        // When direction is 0 (at stroke turnaround), output should be midpoint
-        Assert.Equal(0.5, PatternGenerator.CalculateFigure8(0.75, 0.0), Tolerance);
-        Assert.Equal(0.5, PatternGenerator.CalculateFigure8(0.25, 0.0), Tolerance);
-    }
-
-    [Fact]
-    public void Figure8_PartialDirection_ReducesAmplitude()
-    {
-        // Half direction should give half the deflection
-        var full = PatternGenerator.CalculateFigure8(0.75, 1.0);
-        var half = PatternGenerator.CalculateFigure8(0.75, 0.5);
-        var deflectionFull = Math.Abs(full - 0.5);
-        var deflectionHalf = Math.Abs(half - 0.5);
-        Assert.Equal(deflectionFull * 0.5, deflectionHalf, 0.01);
-    }
-
-    [Fact]
-    public void Figure8_PeakAmplitude_AtRoot2Over2()
-    {
-        // Maximum pitch deflection at n = ±1/√2 (stroke ≈ 0.146 or 0.854)
-        // n = (0.854 - 0.5)/0.5 ≈ 0.707, raw = 2*0.707*0.707 ≈ 1.0
-        // With 1.0 amplitude scale: peak output = (1.0 + 1) / 2 = 1.0
-        var peakHigh = PatternGenerator.CalculateFigure8(0.854, -1.0); // going down
-        Assert.True(peakHigh > 0.9, $"Expected near 1.0, got {peakHigh}");
-
-        var peakLow = PatternGenerator.CalculateFigure8(0.854, 1.0); // going up → mirrored
-        Assert.True(peakLow < 0.1, $"Expected near 0.0, got {peakLow}");
-    }
-
-    [Fact]
-    public void Figure8_ReturnsValuesInRange()
-    {
-        for (int i = 0; i <= 100; i++)
-        {
-            double stroke = i / 100.0;
-            var up = PatternGenerator.CalculateFigure8(stroke, 1.0);
-            var down = PatternGenerator.CalculateFigure8(stroke, -1.0);
-            var mid = PatternGenerator.CalculateFigure8(stroke, 0.0);
-            var partial = PatternGenerator.CalculateFigure8(stroke, 0.3);
-            Assert.True(up >= 0.0 && up <= 1.0, $"Dir=1.0 at {stroke} returned {up}");
-            Assert.True(down >= 0.0 && down <= 1.0, $"Dir=-1.0 at {stroke} returned {down}");
-            Assert.True(mid >= 0.0 && mid <= 1.0, $"Dir=0.0 at {stroke} returned {mid}");
-            Assert.True(partial >= 0.0 && partial <= 1.0, $"Dir=0.3 at {stroke} returned {partial}");
-        }
-    }
-
     // --- All patterns return values in 0.0–1.0 range ---
 
     [Theory]
@@ -423,8 +303,6 @@ public class PatternGeneratorTests
     [InlineData(AxisFillMode.Square)]
     [InlineData(AxisFillMode.Pulse)]
     [InlineData(AxisFillMode.EaseInOut)]
-    [InlineData(AxisFillMode.Grind)]
-    [InlineData(AxisFillMode.Figure8)]
     public void Calculate_AllPatterns_InRange(AxisFillMode mode)
     {
         for (int i = 0; i <= 100; i++)

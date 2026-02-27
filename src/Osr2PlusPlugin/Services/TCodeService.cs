@@ -51,10 +51,9 @@ public class TCodeService : IDisposable
     // Random pattern generators — one per axis
     private readonly Dictionary<string, RandomPatternGenerator> _randomGenerators = new();
 
-    // Stroke tracking for grind/figure8/random synchronization
+    // Stroke tracking for random synchronization
     private double _lastStrokePosition = 50.0;
     private double _cumulativeStrokeDistance;
-    private double _smoothStrokeDirection; // -1..+1, smoothed for Figure8 Lissajous
 
     // Per-axis cumulative fill time (for independent pattern fill)
     private readonly Dictionary<string, double> _cumulativeFillTime = new();
@@ -114,7 +113,6 @@ public class TCodeService : IDisposable
         _interpolation.ResetIndices();
         // Reset stroke tracking and random generators on script change
         _cumulativeStrokeDistance = 0;
-        _smoothStrokeDirection = 0.0;
         _lastStrokePosition = 50.0;
         _cumulativeFillTime.Clear();
         foreach (var gen in _randomGenerators.Values) gen.Reset();
@@ -464,7 +462,7 @@ public class TCodeService : IDisposable
 
         var parts = new List<string>();
 
-        // === First pass: compute L0 stroke position for grind/random sync ===
+        // === First pass: compute L0 stroke position for random sync ===
         double strokePosition = 50.0;
         bool hasStrokeScript = false;
         var strokeConfig = _axisConfigs.FirstOrDefault(c => c.Id == "L0" && c.Enabled);
@@ -476,7 +474,7 @@ public class TCodeService : IDisposable
         else
         {
             // When an external source (e.g. Pulse) drives L0, use its position
-            // for stroke tracking so fill modes (Grind, Figure8, SyncWithStroke) work.
+            // for stroke tracking so fill modes (SyncWithStroke) work.
             var extPos = _externalPositions;
             if (strokeConfig != null && extPos != null && extPos.TryGetValue("L0", out var extL0))
             {
@@ -484,13 +482,8 @@ public class TCodeService : IDisposable
                 hasStrokeScript = true;
             }
         }
-        // Track stroke direction for Figure8 — exponentially smoothed velocity
-        var strokeDelta = strokePosition - _lastStrokePosition;
-        // Scale velocity to -1..+1 range (2 units/tick at 100Hz → ±1.0)
-        var rawDirection = Math.Clamp(strokeDelta * 0.5, -1.0, 1.0);
-        _smoothStrokeDirection += (rawDirection - _smoothStrokeDirection) * 0.15;
-
         // Accumulate stroke travel distance for random/sync fill speed
+        var strokeDelta = strokePosition - _lastStrokePosition;
         _cumulativeStrokeDistance += Math.Abs(strokeDelta);
         _lastStrokePosition = strokePosition;
 
@@ -544,40 +537,7 @@ public class TCodeService : IDisposable
                 double patternInput = testState.Phase;
 
                 double position;
-                if (effectiveFillMode == AxisFillMode.Grind)
-                {
-                    // Grind in test mode: simulate stroke with triangle wave, use config range
-                    var simulatedStroke = PatternGenerator.Calculate(AxisFillMode.Triangle, testState.Phase);
-                    var range = config.Max - config.Min;
-                    var grindPos = config.Min + range - simulatedStroke * range;
-
-                    // Blend with Grind midpoint for ramp-up
-                    var grindBlend = Math.Clamp(testState.CurrentAmplitude / 50.0, 0.0, 1.0);
-                    var grindMidpoint = config.Min + range / 2.0;
-                    grindPos = grindMidpoint + (grindPos - grindMidpoint) * grindBlend;
-
-                    var grindTcode = (int)(grindPos / 100.0 * 999);
-                    grindTcode = Math.Clamp(grindTcode, 0, 999);
-                    grindTcode = ApplyPositionOffset(config, grindTcode);
-
-                    if (IsDirty(config.Id, grindTcode))
-                    {
-                        parts.Add(FormatTCodeCommand(config, grindTcode, intervalMs));
-                        _lastSentValues[config.Id] = grindTcode;
-                    }
-                    continue;
-                }
-                else if (effectiveFillMode == AxisFillMode.Figure8)
-                {
-                    // Figure-8 in test mode: simulate stroke with triangle wave and smooth direction
-                    var simulatedStroke = PatternGenerator.Calculate(AxisFillMode.Triangle, testState.Phase);
-                    // sin(phase * 2π) gives smooth direction: +1 at mid-upstroke, -1 at mid-downstroke,
-                    // 0 at stroke extremes — perfect for smooth figure-8 loop transitions
-                    var testDirection = Math.Sin(testState.Phase * 2.0 * Math.PI);
-                    var figure8Value = PatternGenerator.CalculateFigure8(simulatedStroke, testDirection);
-                    position = figure8Value * 100.0;
-                }
-                else if (effectiveFillMode == AxisFillMode.Random)
+                if (effectiveFillMode == AxisFillMode.Random)
                 {
                     // Random uses its own cosine-interpolated generator
                     if (!_randomGenerators.TryGetValue(config.Id, out var generator))
@@ -648,40 +608,6 @@ public class TCodeService : IDisposable
             if (config.FillMode == AxisFillMode.None || !_isPlaying)
             {
                 ProcessReturnToCenter(config, intervalMs, parts);
-                continue;
-            }
-
-            // --- Grind (R2 only) / Figure8 (R1 + R2) ---
-            if ((config.FillMode == AxisFillMode.Grind && config.Id == "R2")
-                || (config.FillMode == AxisFillMode.Figure8 && config.Id is "R1" or "R2"))
-            {
-                double grindPos;
-                if (config.FillMode == AxisFillMode.Grind)
-                {
-                    // Grind: pitch inversely follows stroke (stroke up → pitch down)
-                    // Uses the axis config range so Min/Max slider controls amplitude
-                    var range = config.Max - config.Min;
-                    grindPos = config.Min + range - (strokePosition / 100.0) * range;
-                }
-                else // Figure8
-                {
-                    // Lissajous figure-8: pitch/roll varies with stroke position and smoothed direction
-                    var normalizedStroke = strokePosition / 100.0;
-                    var figure8Value = PatternGenerator.CalculateFigure8(normalizedStroke, _smoothStrokeDirection);
-                    // Use config range for all axes (both pitch and roll)
-                    grindPos = config.Min + figure8Value * (config.Max - config.Min);
-                }
-
-                var grindVal = (int)(grindPos / 100.0 * 999);
-                grindVal = Math.Clamp(grindVal, 0, 999);
-                grindVal = ApplyPositionOffset(config, grindVal);
-
-                var finalGrindVal = ApplyRampUp(config.Id, grindVal);
-                if (IsDirty(config.Id, finalGrindVal))
-                {
-                    parts.Add(FormatTCodeCommand(config, finalGrindVal, intervalMs));
-                    _lastSentValues[config.Id] = finalGrindVal;
-                }
                 continue;
             }
 
