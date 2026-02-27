@@ -24,31 +24,31 @@ public class AxisConfigTests
     }
 
     [Fact]
-    public void Min_ClampedToNeg50_149()
+    public void Min_ClampedTo0_99()
     {
-        var axis = new AxisConfig { Max = 150 };
+        var axis = new AxisConfig { Max = 100 };
         axis.Min = -100;
-        Assert.Equal(-50, axis.Min);
+        Assert.Equal(0, axis.Min);
 
-        axis.Min = -50;
-        Assert.Equal(-50, axis.Min);
+        axis.Min = 0;
+        Assert.Equal(0, axis.Min);
 
-        axis.Min = 149;
-        Assert.Equal(149, axis.Min);
+        axis.Min = 99;
+        Assert.Equal(99, axis.Min);
     }
 
     [Fact]
-    public void Max_ClampedToNeg49_150()
+    public void Max_ClampedTo1_100()
     {
-        var axis = new AxisConfig { Min = -50 };
+        var axis = new AxisConfig { Min = 0 };
         axis.Max = 200;
-        Assert.Equal(150, axis.Max);
+        Assert.Equal(100, axis.Max);
 
-        axis.Max = 150;
-        Assert.Equal(150, axis.Max);
+        axis.Max = 100;
+        Assert.Equal(100, axis.Max);
 
-        axis.Max = -49;
-        Assert.Equal(-49, axis.Max);
+        axis.Max = 1;
+        Assert.Equal(1, axis.Max);
     }
 
     [Fact]
@@ -115,49 +115,6 @@ public class AxisConfigTests
     }
 
     // ── Derived Properties ───────────────────────────────────
-
-    [Fact]
-    public void IsExtendedRange_WhenDefault_ReturnsFalse()
-    {
-        var axis = new AxisConfig { Min = 0, Max = 100 };
-        Assert.False(axis.IsExtendedRange);
-    }
-
-    [Fact]
-    public void IsExtendedRange_WhenMinNegative_ReturnsTrue()
-    {
-        var axis = new AxisConfig { Min = -10, Max = 100 };
-        Assert.True(axis.IsExtendedRange);
-    }
-
-    [Fact]
-    public void IsExtendedRange_WhenMaxOver100_ReturnsTrue()
-    {
-        var axis = new AxisConfig { Min = 0, Max = 120 };
-        Assert.True(axis.IsExtendedRange);
-    }
-
-    [Fact]
-    public void IsExtendedRange_RaisesPropertyChanged_WhenMinChanges()
-    {
-        var axis = new AxisConfig { Min = 0, Max = 100 };
-        var changed = new List<string>();
-        axis.PropertyChanged += (_, e) => changed.Add(e.PropertyName!);
-
-        axis.Min = -10;
-        Assert.Contains("IsExtendedRange", changed);
-    }
-
-    [Fact]
-    public void IsExtendedRange_RaisesPropertyChanged_WhenMaxChanges()
-    {
-        var axis = new AxisConfig { Min = 0, Max = 100 };
-        var changed = new List<string>();
-        axis.PropertyChanged += (_, e) => changed.Add(e.PropertyName!);
-
-        axis.Max = 110;
-        Assert.Contains("IsExtendedRange", changed);
-    }
 
     [Fact]
     public void Default_MinIs0_MaxIs100()
