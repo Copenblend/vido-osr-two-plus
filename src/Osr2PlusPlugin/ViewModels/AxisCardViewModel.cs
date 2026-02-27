@@ -55,7 +55,7 @@ public class AxisCardViewModel : INotifyPropertyChanged
     //  Persisted Config Properties
     // ═══════════════════════════════════════════════════════
 
-    /// <summary>Minimum amplitude (-50 to 149).</summary>
+    /// <summary>Minimum amplitude (0 to 99).</summary>
     public int Min
     {
         get => _config.Min;
@@ -66,13 +66,12 @@ public class AxisCardViewModel : INotifyPropertyChanged
                 _config.Min = value;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(RangeLabel));
-                OnPropertyChanged(nameof(IsExtendedRange));
                 RaiseConfigChanged();
             }
         }
     }
 
-    /// <summary>Maximum amplitude (-49 to 150).</summary>
+    /// <summary>Maximum amplitude (1 to 100).</summary>
     public int Max
     {
         get => _config.Max;
@@ -83,7 +82,6 @@ public class AxisCardViewModel : INotifyPropertyChanged
                 _config.Max = value;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(RangeLabel));
-                OnPropertyChanged(nameof(IsExtendedRange));
                 RaiseConfigChanged();
             }
         }
@@ -204,9 +202,6 @@ public class AxisCardViewModel : INotifyPropertyChanged
 
     /// <summary>Range display label: "0-100".</summary>
     public string RangeLabel => _config.RangeLabel;
-
-    /// <summary>True when Min &lt; 0 or Max &gt; 100 — shows a hardware-stress warning.</summary>
-    public bool IsExtendedRange => _config.IsExtendedRange;
 
     /// <summary>Available fill modes filtered by axis type.</summary>
     public AxisFillMode[] AvailableFillModes => _config.AvailableFillModes;

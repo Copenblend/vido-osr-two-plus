@@ -116,7 +116,7 @@
                         </Grid.ColumnDefinitions>
 
                         <controls:RangeSlider Grid.Column="0"
-                                              Minimum="-50" Maximum="150"
+                                              Minimum="0" Maximum="100"
                                               MinValue="{Binding Min, Mode=TwoWay}"
                                               MaxValue="{Binding Max, Mode=TwoWay}"
                                               TrackColor="{Binding AxisColor, Converter={StaticResource HexToBrush}}"
@@ -130,21 +130,6 @@
                                    HorizontalAlignment="Right"
                                    VerticalAlignment="Center" />
                     </Grid>
-
-                    <!-- Extended range warning -->
-                    <StackPanel Orientation="Horizontal"
-                                Visibility="{Binding IsExtendedRange, Converter={StaticResource BoolToVisibility}}"
-                                Margin="0,4,0,0">
-                        <TextBlock Text="⚠"
-                                   Foreground="#E53935"
-                                   FontSize="11"
-                                   Margin="0,0,4,0"
-                                   VerticalAlignment="Center" />
-                        <TextBlock Text="Extended range — may stress hardware"
-                                   Foreground="#E53935"
-                                   FontFamily="Segoe UI" FontSize="10"
-                                   VerticalAlignment="Center" />
-                    </StackPanel>
 
                     <!-- ── 2. Fill Mode Section (not shown for Stroke) ── -->
                     <StackPanel Visibility="{Binding ShowFillMode, Converter={StaticResource BoolToVisibility}}">

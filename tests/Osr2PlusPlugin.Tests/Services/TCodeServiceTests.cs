@@ -73,17 +73,15 @@ public class TCodeServiceTests : IDisposable
     }
 
     [Fact]
-    public void PositionToTCode_WithExtendedRange_ClampsTo0And999()
+    public void PositionToTCode_WithCustomRange_ScalesCorrectly()
     {
-        // Min=-50, Max=150 → position 0 maps to -50 → TCode = (-50/100)*999 = -499 → clamped 0
-        var config = new AxisConfig { Id = "L0", Type = "linear", Min = -50, Max = 150 };
-        Assert.Equal(0, TCodeService.PositionToTCode(config, 0));
-        // position 100 maps to 150 → TCode = (150/100)*999 = 1498 → clamped 999
-        Assert.Equal(999, TCodeService.PositionToTCode(config, 100));
+        // Min=20, Max=80 → position 0 maps to 20 → TCode = (20/100)*999 = 199
+        var config = new AxisConfig { Id = "L0", Type = "linear", Min = 20, Max = 80 };
+        Assert.Equal(199, TCodeService.PositionToTCode(config, 0));
+        // position 100 maps to 80 → TCode = (80/100)*999 = 799
+        Assert.Equal(799, TCodeService.PositionToTCode(config, 100));
         // position 50 maps to 50 → TCode = (50/100)*999 = 499
         Assert.Equal(499, TCodeService.PositionToTCode(config, 50));
-        // position 25 maps to 0 → TCode = 0
-        Assert.Equal(0, TCodeService.PositionToTCode(config, 25));
     }
 
     // ===== Dirty Value Tracking =====
