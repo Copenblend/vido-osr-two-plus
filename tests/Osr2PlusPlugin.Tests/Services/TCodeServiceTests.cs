@@ -1122,16 +1122,40 @@ public class TCodeServiceTests : IDisposable
         Assert.Equal(expected, result);
     }
 
-    // --- R1, R2: no offset ---
+    // --- R1, R2: percentage offset (same as L0) ---
+
+    [Theory]
+    [InlineData("R1", 500, 25, 749)]    // +25% → 500 + 249 = 749
+    [InlineData("R1", 500, -25, 251)]   // -25% → 500 - 249 = 251
+    [InlineData("R2", 500, 25, 749)]    // +25% → 500 + 249 = 749
+    [InlineData("R2", 500, -25, 251)]   // -25% → 500 - 249 = 251
+    public void ApplyPositionOffset_R1R2_AddsPercentageOffset(string axisId, int tcodeIn, double offset, int expected)
+    {
+        var config = new AxisConfig { Id = axisId, Type = "rotation", PositionOffset = offset };
+        var result = TCodeService.ApplyPositionOffset(config, tcodeIn);
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    [InlineData("R1", 0, -50, 0)]      // 0 - 499 = -499 → clamped to 0
+    [InlineData("R1", 999, 50, 999)]   // 999 + 499 = 1498 → clamped to 999
+    [InlineData("R2", 0, -50, 0)]      // 0 - 499 = -499 → clamped to 0
+    [InlineData("R2", 999, 50, 999)]   // 999 + 499 = 1498 → clamped to 999
+    public void ApplyPositionOffset_R1R2_ClampsTo0And999(string axisId, int tcodeIn, double offset, int expected)
+    {
+        var config = new AxisConfig { Id = axisId, Type = "rotation", PositionOffset = offset };
+        var result = TCodeService.ApplyPositionOffset(config, tcodeIn);
+        Assert.Equal(expected, result);
+    }
 
     [Theory]
     [InlineData("R1")]
     [InlineData("R2")]
-    public void ApplyPositionOffset_R1R2_NoOffsetApplied(string axisId)
+    public void ApplyPositionOffset_R1R2_ZeroOffset_NoChange(string axisId)
     {
-        var config = new AxisConfig { Id = axisId, Type = "rotation", PositionOffset = 50 };
+        var config = new AxisConfig { Id = axisId, Type = "rotation", PositionOffset = 0 };
         var result = TCodeService.ApplyPositionOffset(config, 500);
-        Assert.Equal(500, result); // Unchanged despite offset being set
+        Assert.Equal(500, result);
     }
 
     // --- Combined with min/max ---

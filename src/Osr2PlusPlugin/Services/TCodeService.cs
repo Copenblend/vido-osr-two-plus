@@ -873,16 +873,16 @@ public class TCodeService : IDisposable
     /// Applies per-axis position offset to a TCode value.
     /// L0: offset is -50 to +50 (percentage points), added after min/max scaling, result clamped 0–999.
     /// R0: offset is 0–359 (degrees), rotated via modular wrapping.
-    /// R1, R2: no offset applied.
+    /// R1, R2: offset is -50 to +50 (percentage points), same as L0, clamped 0–999.
     /// </summary>
     internal static int ApplyPositionOffset(AxisConfig config, int tcodeValue)
     {
         if (config.PositionOffset == 0 || !config.HasPositionOffset)
             return tcodeValue;
 
-        if (config.Id == "L0")
+        if (config.Id is "L0" or "R1" or "R2")
         {
-            // L0: offset is percentage points (-50 to +50) added to the scaled position
+            // L0/R1/R2: offset is percentage points (-50 to +50) added to the scaled position
             var offsetTcode = (int)(config.PositionOffset / 100.0 * 999);
             return Math.Clamp(tcodeValue + offsetTcode, 0, 999);
         }

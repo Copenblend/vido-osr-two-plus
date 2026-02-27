@@ -278,17 +278,17 @@ public class AxisCardViewModelTests : IDisposable
     }
 
     [Fact]
-    public void ShowPositionOffset_FalseForRoll()
+    public void ShowPositionOffset_TrueForRoll()
     {
         var sut = CreateSut(R1);
-        Assert.False(sut.ShowPositionOffset);
+        Assert.True(sut.ShowPositionOffset);
     }
 
     [Fact]
-    public void ShowPositionOffset_FalseForPitch()
+    public void ShowPositionOffset_TrueForPitch()
     {
         var sut = CreateSut(R2);
-        Assert.False(sut.ShowPositionOffset);
+        Assert.True(sut.ShowPositionOffset);
     }
 
     // ═══════════════════════════════════════════════════════
@@ -377,10 +377,19 @@ public class AxisCardViewModelTests : IDisposable
     }
 
     [Fact]
-    public void PositionOffsetLabel_Roll_Empty()
+    public void PositionOffsetLabel_Roll_FormatsPercent()
     {
         var sut = CreateSut(R1);
-        Assert.Equal("", sut.PositionOffsetLabel);
+        sut.PositionOffset = 25;
+        Assert.Equal("25%", sut.PositionOffsetLabel);
+    }
+
+    [Fact]
+    public void PositionOffsetLabel_Pitch_FormatsPercent()
+    {
+        var sut = CreateSut(R2);
+        sut.PositionOffset = -10;
+        Assert.Equal("-10%", sut.PositionOffsetLabel);
     }
 
     [Fact]
@@ -409,6 +418,34 @@ public class AxisCardViewModelTests : IDisposable
     {
         var sut = CreateSut(R0);
         Assert.Equal(179.0, sut.PositionOffsetMax);
+    }
+
+    [Fact]
+    public void PositionOffsetMin_Roll_IsNegative50()
+    {
+        var sut = CreateSut(R1);
+        Assert.Equal(-50.0, sut.PositionOffsetMin);
+    }
+
+    [Fact]
+    public void PositionOffsetMin_Pitch_IsNegative50()
+    {
+        var sut = CreateSut(R2);
+        Assert.Equal(-50.0, sut.PositionOffsetMin);
+    }
+
+    [Fact]
+    public void PositionOffsetMax_Roll_IsPositive50()
+    {
+        var sut = CreateSut(R1);
+        Assert.Equal(50.0, sut.PositionOffsetMax);
+    }
+
+    [Fact]
+    public void PositionOffsetMax_Pitch_IsPositive50()
+    {
+        var sut = CreateSut(R2);
+        Assert.Equal(50.0, sut.PositionOffsetMax);
     }
 
     [Fact]
