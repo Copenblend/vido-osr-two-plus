@@ -159,7 +159,7 @@ public static class PatternGenerator
     /// Uses y(t) = sin(2t) where x(t) = cos(t) defines the stroke.
     /// The two loops of the 8 are formed by the direction change: pitch tilts one way
     /// when stroke goes up and the other way when stroke goes down.
-    /// Amplitude is scaled to 60% to keep pitch/roll movement subtle and realistic.
+    /// Amplitude uses the full range; the axis Min/Max config controls effective travel.
     /// </summary>
     /// <param name="normalizedStrokePosition">Stroke position normalized to 0.0–1.0.</param>
     /// <param name="direction">Smoothed direction value: positive = going up, negative = going down.
@@ -174,8 +174,8 @@ public static class PatternGenerator
         // This is |sin(2t)| when x = cos(t)
         var figure8 = 2.0 * n * Math.Sqrt(Math.Max(0.0, 1.0 - n * n));
 
-        // Scale amplitude to 60% for subtler, more realistic movement
-        const double amplitudeScale = 0.6;
+        // Full amplitude — the axis Min/Max config controls effective travel
+        const double amplitudeScale = 1.0;
         figure8 *= amplitudeScale;
 
         // Multiply by direction sign to form the two loops.

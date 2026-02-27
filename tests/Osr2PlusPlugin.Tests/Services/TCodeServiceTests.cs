@@ -1691,6 +1691,124 @@ public class TCodeServiceTests : IDisposable
 
     // ===== Mock Transport =====
 
+    // --- vb-014: Grind / Figure8 use full config range ---
+
+    [Fact]
+    public void FillMode_Grind_WithCustomMinMax_ScalesCorrectly()
+    {
+        // Grind with Min=20, Max=80 should produce output in the TCode range
+        // corresponding to 20–80 (not 0–100)
+        var configs = AxisConfig.CreateDefaults();
+        configs[3].FillMode = AxisFillMode.Grind; // R2 = Grind
+        configs[3].Min = 20;
+        configs[3].Max = 80;
+        _sut.SetAxisConfigs(configs);
+
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(10000, 0) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(5000);
+
+        _sut.Start();
+        Thread.Sleep(200);
+        _sut.StopTimer();
+
+        // L0 at 0 (bottom) → Grind produces config.Max (80) → TCode ≈ 799
+        // With ramp-up, values should converge toward 799 from midpoint
+        var r2Values = _transport.SentMessages
+            .SelectMany(m => m.Split(' '))
+            .Where(p => p.StartsWith("R2"))
+            .Select(p => int.Parse(p.Substring(2, 3)))
+            .ToList();
+        Assert.True(r2Values.Count > 0);
+        // All values should be within the 20–80% range (TCode 199–799)
+        foreach (var value in r2Values)
+        {
+            Assert.True(value >= 199 && value <= 799,
+                $"Grind R2 value {value} outside expected range 199–799 for Min=20,Max=80");
+        }
+    }
+
+    [Fact]
+    public void FillMode_Figure8_WithCustomMinMax_ScalesCorrectly()
+    {
+        // Figure8 with Min=10, Max=90 should stay within that range
+        var configs = AxisConfig.CreateDefaults();
+        configs[3].FillMode = AxisFillMode.Figure8; // R2 = Figure8
+        configs[3].Min = 10;
+        configs[3].Max = 90;
+        _sut.SetAxisConfigs(configs);
+
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(2500, 100), new(5000, 0), new(7500, 100), new(10000, 0) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+
+        _sut.Start();
+        for (int t = 0; t < 5000; t += 500)
+        {
+            _sut.SetTime(t);
+            Thread.Sleep(30);
+        }
+        _sut.StopTimer();
+
+        var r2Values = _transport.SentMessages
+            .SelectMany(m => m.Split(' '))
+            .Where(p => p.StartsWith("R2"))
+            .Select(p => int.Parse(p.Substring(2, 3)))
+            .ToList();
+        Assert.True(r2Values.Count > 0);
+        // All values should be within 10–90% range (TCode 99–899)
+        foreach (var value in r2Values)
+        {
+            Assert.True(value >= 99 && value <= 899,
+                $"Figure8 R2 value {value} outside expected range 99–899 for Min=10,Max=90");
+        }
+    }
+
+    [Fact]
+    public void FillMode_Grind_UsesConfigRange_NotPitchFillMaxDirectly()
+    {
+        // Verify that Grind respects the axis config range for output,
+        // not just PitchFillMaxPosition as a hardcoded range
+        var configs = AxisConfig.CreateDefaults();
+        configs[3].FillMode = AxisFillMode.Grind; // R2 = Grind
+        configs[3].Min = 0;
+        configs[3].Max = 50; // Half range
+        _sut.SetAxisConfigs(configs);
+
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData { Actions = new List<FunscriptAction> { new(0, 0), new(10000, 0) } }
+        };
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(5000);
+
+        _sut.Start();
+        Thread.Sleep(200);
+        _sut.StopTimer();
+
+        // L0 at 0 → grindPos = config.Max (50) → TCode = 499
+        // Ramp-up starts from midpoint (500) and converges toward 499,
+        // so the last value should be at or near 499
+        var r2Values = _transport.SentMessages
+            .SelectMany(m => m.Split(' '))
+            .Where(p => p.StartsWith("R2"))
+            .Select(p => int.Parse(p.Substring(2, 3)))
+            .ToList();
+        Assert.True(r2Values.Count > 0);
+        // Last value (after ramp-up) should have converged near/at 499
+        var lastValue = r2Values.Last();
+        Assert.True(lastValue <= 500,
+            $"Grind R2 last value {lastValue} should be at or near 499 for Max=50 config");
+    }
+
     private class MockTransport : ITransportService
     {
         public bool IsConnected { get; set; } = true;
