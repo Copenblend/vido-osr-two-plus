@@ -156,15 +156,22 @@ public class Osr2PlusPlugin : IVidoPlugin
         _subscriptions.Add(context.Events.Subscribe<ExternalBeatEvent>(
             evt => _beatBarVm.OnExternalBeatEvent(evt)));
 
-        // Subscribe: funscript suppression → AxisControlViewModel
-        _subscriptions.Add(context.Events.Subscribe<SuppressFunscriptEvent>(
-            evt => _axisControlVm.OnSuppressFunscript(evt)));
+        // Subscribe: funscript suppression → AxisControlViewModel + auto-switch bottom panel
+        _subscriptions.Add(context.Events.Subscribe<SuppressFunscriptEvent>(evt =>
+        {
+            _axisControlVm.OnSuppressFunscript(evt);
+
+            // When switching back to funscript, show the Funscript Visualizer
+            if (!evt.SuppressFunscripts)
+                context.RequestShowBottomPanel("osr2-visualizer");
+        }));
 
         // Subscribe: external axis positions → TCodeService
         _subscriptions.Add(context.Events.Subscribe<ExternalAxisPositionsEvent>(
             evt => _tcode.SetExternalPositions(evt.Positions)));
 
         // Publish: script changes → HapticScriptsChangedEvent
+        // Auto-show funscript visualizer whenever scripts are loaded
         _axisControlVm.ScriptsChanged += scripts =>
         {
             context.Events.Publish(new HapticScriptsChangedEvent
@@ -172,6 +179,10 @@ public class Osr2PlusPlugin : IVidoPlugin
                 HasAnyScripts = scripts.Count > 0,
                 AxisScriptLoaded = scripts.Keys.ToDictionary(k => k, _ => true),
             });
+
+            // Always switch to the funscript visualizer when scripts load
+            if (scripts.Count > 0)
+                context.RequestShowBottomPanel("osr2-visualizer");
         };
 
         // Publish: axis config changes → HapticAxisConfigEvent
