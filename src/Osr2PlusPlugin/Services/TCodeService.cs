@@ -230,11 +230,23 @@ public class TCodeService : IDisposable
     /// <summary>
     /// Applies external axis positions from an <see cref="ExternalAxisPositionsEvent"/>.
     /// When set, the specified axes use these positions instead of funscript interpolation.
-    /// Pass null to clear external positions.
+    /// Pass an empty memory slice to clear external positions.
     /// </summary>
-    public void SetExternalPositions(IReadOnlyDictionary<string, double>? positions)
+    public void SetExternalPositions(ReadOnlyMemory<AxisPosition> positions)
     {
-        _externalPositions = positions;
+        if (positions.IsEmpty)
+        {
+            _externalPositions = null;
+            return;
+        }
+
+        var map = new Dictionary<string, double>(positions.Length);
+        foreach (var position in positions.Span)
+        {
+            map[position.AxisId] = position.Position;
+        }
+
+        _externalPositions = map;
     }
 
     /// <summary>
