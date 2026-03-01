@@ -547,10 +547,10 @@ public class Osr2PlusPluginEventTests : IDisposable
         public int SubscriptionCount => _subscriptions.Count;
         public int ActiveSubscriptionCount => _subscriptions.Count(s => !s.IsDisposed);
 
-        public bool HasSubscription<TEvent>() where TEvent : class
+        public bool HasSubscription<TEvent>()
             => _handlers.ContainsKey(typeof(TEvent)) && _handlers[typeof(TEvent)].Count > 0;
 
-        public IDisposable Subscribe<TEvent>(Action<TEvent> handler) where TEvent : class
+        public IDisposable Subscribe<TEvent>(Action<TEvent> handler)
         {
             var type = typeof(TEvent);
             if (!_handlers.TryGetValue(type, out var list))
@@ -565,7 +565,7 @@ public class Osr2PlusPluginEventTests : IDisposable
             return sub;
         }
 
-        public void Publish<TEvent>(TEvent eventData) where TEvent : class
+        public void Publish<TEvent>(TEvent eventData)
         {
             if (!_handlers.TryGetValue(typeof(TEvent), out var list)) return;
             foreach (var handler in list.ToList())

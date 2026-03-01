@@ -217,15 +217,18 @@ public class BeatBarViewModel : INotifyPropertyChanged
     /// </summary>
     public void OnBeatSourceRegistration(ExternalBeatSourceRegistration registration)
     {
+        if (registration.Source is not { } source)
+            return;
+
         if (registration.IsRegistering)
         {
             // Remove any existing source with the same ID first, then add
-            _externalSources.RemoveAll(s => s.Id == registration.Source.Id);
-            _externalSources.Add(registration.Source);
+            _externalSources.RemoveAll(s => s.Id == source.Id);
+            _externalSources.Add(source);
         }
         else
         {
-            _externalSources.RemoveAll(s => s.Id == registration.Source.Id);
+            _externalSources.RemoveAll(s => s.Id == source.Id);
         }
 
         RebuildAvailableModes();
@@ -239,7 +242,7 @@ public class BeatBarViewModel : INotifyPropertyChanged
     {
         if (_mode.IsExternal && _mode.Id == beatEvent.SourceId)
         {
-            _externalBeats = beatEvent.BeatTimesMs.ToList();
+            _externalBeats = beatEvent.BeatTimesMs.ToArray().ToList();
             Beats = _externalBeats;
             OnPropertyChanged(nameof(IsActive));
             RepaintRequested?.Invoke();
@@ -250,7 +253,7 @@ public class BeatBarViewModel : INotifyPropertyChanged
             // to the external mode, beats are immediately available
             if (_externalSources.Any(s => s.Id == beatEvent.SourceId))
             {
-                _externalBeats = beatEvent.BeatTimesMs.ToList();
+                _externalBeats = beatEvent.BeatTimesMs.ToArray().ToList();
             }
         }
     }

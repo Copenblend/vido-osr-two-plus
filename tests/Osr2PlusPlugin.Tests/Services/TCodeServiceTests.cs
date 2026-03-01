@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Osr2PlusPlugin.Models;
 using Osr2PlusPlugin.Services;
+using Vido.Haptics;
 using Xunit;
 
 namespace Osr2PlusPlugin.Tests.Services;
@@ -1335,7 +1336,7 @@ public class TCodeServiceTests : IDisposable
         configs[0].Max = 80;
         _sut.SetAxisConfigs(configs);
 
-        _sut.SetExternalPositions(new Dictionary<string, double> { ["L0"] = 50.0 });
+        _sut.SetExternalPositions(new[] { new AxisPosition { AxisId = "L0", Position = 50.0 } });
         _sut.SetPlaying(true);
 
         _sut.Start();
@@ -1361,7 +1362,7 @@ public class TCodeServiceTests : IDisposable
         configs[0].PositionOffset = 10; // +10 points
         _sut.SetAxisConfigs(configs);
 
-        _sut.SetExternalPositions(new Dictionary<string, double> { ["L0"] = 50.0 });
+        _sut.SetExternalPositions(new[] { new AxisPosition { AxisId = "L0", Position = 50.0 } });
         _sut.SetPlaying(true);
 
         _sut.Start();
@@ -1389,7 +1390,7 @@ public class TCodeServiceTests : IDisposable
         _sut.SetAxisConfigs(configs);
 
         // No funscripts — only external L0
-        _sut.SetExternalPositions(new Dictionary<string, double> { ["L0"] = 75.0 });
+        _sut.SetExternalPositions(new[] { new AxisPosition { AxisId = "L0", Position = 75.0 } });
         _sut.SetPlaying(true);
 
         _sut.Start();
@@ -1414,14 +1415,14 @@ public class TCodeServiceTests : IDisposable
         _sut.SetAxisConfigs(configs);
 
         // Simulate external L0 moving: position changes between ticks
-        _sut.SetExternalPositions(new Dictionary<string, double> { ["L0"] = 10.0 });
+        _sut.SetExternalPositions(new[] { new AxisPosition { AxisId = "L0", Position = 10.0 } });
         _sut.SetPlaying(true);
 
         _sut.Start();
         Thread.Sleep(50);
 
         // Move L0 so cumulative stroke distance increases
-        _sut.SetExternalPositions(new Dictionary<string, double> { ["L0"] = 90.0 });
+        _sut.SetExternalPositions(new[] { new AxisPosition { AxisId = "L0", Position = 90.0 } });
         Thread.Sleep(150);
         _sut.StopTimer();
 
@@ -1445,13 +1446,13 @@ public class TCodeServiceTests : IDisposable
         _sut.SetTime(5000);
 
         // Start with external positions
-        _sut.SetExternalPositions(new Dictionary<string, double> { ["L0"] = 10.0 });
+        _sut.SetExternalPositions(new[] { new AxisPosition { AxisId = "L0", Position = 10.0 } });
 
         _sut.Start();
         Thread.Sleep(100);
 
         // Clear external positions
-        _sut.SetExternalPositions(null);
+        _sut.SetExternalPositions(ReadOnlyMemory<AxisPosition>.Empty);
         Thread.Sleep(100);
         _sut.StopTimer();
 
@@ -1466,7 +1467,7 @@ public class TCodeServiceTests : IDisposable
     public void SetScripts_ClearsExternalPositions()
     {
         // Simulate Pulse active: external positions are set
-        _sut.SetExternalPositions(new Dictionary<string, double> { ["L0"] = 75.0 });
+        _sut.SetExternalPositions(new[] { new AxisPosition { AxisId = "L0", Position = 75.0 } });
 
         // Now scripts are reloaded (as happens when suppression is lifted)
         var scripts = new Dictionary<string, FunscriptData>
@@ -1499,7 +1500,7 @@ public class TCodeServiceTests : IDisposable
         _sut.SetTime(5000);
 
         // Drive via external positions (Pulse active)
-        _sut.SetExternalPositions(new Dictionary<string, double> { ["L0"] = 10.0 });
+        _sut.SetExternalPositions(new[] { new AxisPosition { AxisId = "L0", Position = 10.0 } });
 
         _sut.Start();
         Thread.Sleep(100);
