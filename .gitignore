@@ -13,6 +13,7 @@ Context/
 *.code-workspace
 *.csx
 *.zip
+.github/agents/
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
