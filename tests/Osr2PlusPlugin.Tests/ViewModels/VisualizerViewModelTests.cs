@@ -445,6 +445,30 @@ public class VisualizerViewModelTests
         Assert.False(_sut.HasScripts);
     }
 
+    [Fact]
+    public void SetLoadedAxes_ReusedDictionaryContentChanged_RaisesPropertyChangedAndUpdatesHasScripts()
+    {
+        var axes = CreateTestAxes();
+        _sut.SetLoadedAxes(axes);
+
+        var loadedAxesChanged = false;
+        var hasScriptsChanged = false;
+        _sut.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(VisualizerViewModel.LoadedAxes))
+                loadedAxesChanged = true;
+            if (e.PropertyName == nameof(VisualizerViewModel.HasScripts))
+                hasScriptsChanged = true;
+        };
+
+        axes.Clear();
+        _sut.SetLoadedAxes(axes);
+
+        Assert.True(loadedAxesChanged);
+        Assert.True(hasScriptsChanged);
+        Assert.False(_sut.HasScripts);
+    }
+
     // ═══════════════════════════════════════════════════════
     //  ClearAxes
     // ═══════════════════════════════════════════════════════

@@ -388,17 +388,4 @@ public class AxisCardViewModel : INotifyPropertyChanged
     protected void OnPropertyChanged([CallerMemberName] string? name = null)
         => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
-    // ═══════════════════════════════════════════════════════
-    //  Minimal ICommand
-    // ═══════════════════════════════════════════════════════
-
-    private class RelayCommand : ICommand
-    {
-        private readonly Action _execute;
-        public RelayCommand(Action execute) => _execute = execute;
-        public event EventHandler? CanExecuteChanged;
-        public bool CanExecute(object? parameter) => true;
-        public void Execute(object? parameter) => _execute();
-        internal void SuppressWarning() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
-    }
 }

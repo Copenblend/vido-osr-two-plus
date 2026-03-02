@@ -168,7 +168,9 @@ public class VisualizerViewModel : INotifyPropertyChanged
     /// </summary>
     public void SetLoadedAxes(Dictionary<string, FunscriptData> axes)
     {
-        LoadedAxes = axes ?? new Dictionary<string, FunscriptData>();
+        _loadedAxes = axes ?? new Dictionary<string, FunscriptData>();
+        OnPropertyChanged(nameof(LoadedAxes));
+        OnPropertyChanged(nameof(HasScripts));
         RepaintRequested?.Invoke();
     }
 
