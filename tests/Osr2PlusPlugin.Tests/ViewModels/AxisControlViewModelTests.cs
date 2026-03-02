@@ -683,6 +683,60 @@ public class AxisControlViewModelTests : IDisposable
         Assert.Null(sut.AxisCards[1].ScriptFileName); // R0 failed — skipped
     }
 
+    [Fact]
+    public void ScriptsChanged_ReusesDictionaryInstance_AcrossMultipleLoads()
+    {
+        var sut = CreateSut();
+        var events = new List<Dictionary<string, FunscriptData>>();
+        sut.ScriptsChanged += scripts => events.Add(scripts);
+
+        sut.FindMatchingScriptsFunc = _ => new() { { "L0", @"C:\videos\one.funscript" } };
+        sut.TryParseMultiAxisFunc = _ => null;
+        sut.ParseFileFunc = (path, axis) => new FunscriptData
+        {
+            AxisId = axis,
+            FilePath = path,
+            Actions = new() { new(0, 50) }
+        };
+
+        sut.LoadScriptsForVideo(@"C:\videos\one.mp4");
+
+        sut.FindMatchingScriptsFunc = _ => new() { { "R0", @"C:\videos\two.twist.funscript" } };
+        sut.LoadScriptsForVideo(@"C:\videos\two.mp4");
+
+        Assert.Equal(2, events.Count);
+        Assert.True(ReferenceEquals(events[0], events[1]));
+        Assert.DoesNotContain("L0", events[1].Keys);
+        Assert.Contains("R0", events[1].Keys);
+    }
+
+    [Fact]
+    public void ScriptsChanged_ReusesDictionaryInstance_ForLoadClearAndClearAll()
+    {
+        var sut = CreateSut();
+        var events = new List<Dictionary<string, FunscriptData>>();
+        sut.ScriptsChanged += scripts => events.Add(scripts);
+
+        sut.FindMatchingScriptsFunc = _ => new() { { "L0", @"C:\videos\movie.funscript" } };
+        sut.TryParseMultiAxisFunc = _ => null;
+        sut.ParseFileFunc = (path, axis) => new FunscriptData
+        {
+            AxisId = axis,
+            FilePath = path,
+            Actions = new() { new(0, 50) }
+        };
+
+        sut.LoadScriptsForVideo(@"C:\videos\movie.mp4");
+        sut.ClearScripts();
+        sut.ClearAllScripts();
+
+        Assert.Equal(3, events.Count);
+        Assert.True(ReferenceEquals(events[0], events[1]));
+        Assert.True(ReferenceEquals(events[1], events[2]));
+        Assert.Empty(events[1]);
+        Assert.Empty(events[2]);
+    }
+
     // ═══════════════════════════════════════════════════════
     //  Mock Transport
     // ═══════════════════════════════════════════════════════
