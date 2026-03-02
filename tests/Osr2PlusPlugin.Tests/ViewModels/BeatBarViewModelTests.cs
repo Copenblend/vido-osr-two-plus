@@ -160,6 +160,66 @@ public class BeatBarViewModelTests
         Assert.True(raised);
     }
 
+    [Fact]
+    public void OnExternalBeatEvent_CurrentExternalMode_ReusesBeatListInstance()
+    {
+        var source = new Mock<IExternalBeatSource>();
+        source.Setup(s => s.Id).Returns("com.vido.pulse");
+        source.Setup(s => s.DisplayName).Returns("Pulse");
+        source.Setup(s => s.IsAvailable).Returns(true);
+
+        _sut.OnBeatSourceRegistration(new ExternalBeatSourceRegistration
+        {
+            Source = source.Object,
+            IsRegistering = true
+        });
+        _sut.Mode = _sut.AvailableModes.First(m => m.Id == "com.vido.pulse");
+
+        _sut.OnExternalBeatEvent(new ExternalBeatEvent
+        {
+            SourceId = "com.vido.pulse",
+            BeatTimesMs = new[] { 100d, 300d, 500d }
+        });
+        var firstInstance = _sut.Beats;
+
+        _sut.OnExternalBeatEvent(new ExternalBeatEvent
+        {
+            SourceId = "com.vido.pulse",
+            BeatTimesMs = new[] { 200d, 400d }
+        });
+
+        Assert.True(ReferenceEquals(firstInstance, _sut.Beats));
+        Assert.Equal(new[] { 200d, 400d }, _sut.Beats);
+    }
+
+    [Fact]
+    public void ClearBeats_AfterExternalEvent_RetainsReusableBeatListInstance()
+    {
+        var source = new Mock<IExternalBeatSource>();
+        source.Setup(s => s.Id).Returns("com.vido.pulse");
+        source.Setup(s => s.DisplayName).Returns("Pulse");
+        source.Setup(s => s.IsAvailable).Returns(true);
+
+        _sut.OnBeatSourceRegistration(new ExternalBeatSourceRegistration
+        {
+            Source = source.Object,
+            IsRegistering = true
+        });
+        _sut.Mode = _sut.AvailableModes.First(m => m.Id == "com.vido.pulse");
+
+        _sut.OnExternalBeatEvent(new ExternalBeatEvent
+        {
+            SourceId = "com.vido.pulse",
+            BeatTimesMs = new[] { 120d, 240d }
+        });
+        var externalList = _sut.Beats;
+
+        _sut.ClearBeats();
+
+        Assert.True(ReferenceEquals(externalList, _sut.Beats));
+        Assert.Empty(_sut.Beats);
+    }
+
     // ═══════════════════════════════════════════════════════
     //  Mode Changes
     // ═══════════════════════════════════════════════════════

@@ -174,10 +174,14 @@ public class Osr2PlusPlugin : IVidoPlugin
         // Auto-show funscript visualizer whenever scripts are loaded
         _axisControlVm.ScriptsChanged += scripts =>
         {
+            var scriptLoadedMap = new Dictionary<string, bool>(scripts.Count, StringComparer.Ordinal);
+            foreach (var key in scripts.Keys)
+                scriptLoadedMap[key] = true;
+
             context.Events.Publish(new HapticScriptsChangedEvent
             {
                 HasAnyScripts = scripts.Count > 0,
-                AxisScriptLoaded = scripts.Keys.ToDictionary(k => k, _ => true),
+                AxisScriptLoaded = scriptLoadedMap,
             });
 
             // Always switch to the funscript visualizer when scripts load
@@ -418,15 +422,19 @@ public class Osr2PlusPlugin : IVidoPlugin
     {
         if (_axisControlVm == null) return;
 
-        var snapshots = _axisControlVm.AxisCards.Select(card => new HapticAxisSnapshot
+        var axisSnapshots = new List<HapticAxisSnapshot>(_axisControlVm.AxisCards.Count);
+        foreach (var card in _axisControlVm.AxisCards)
         {
-            Id = card.AxisId,
-            Min = card.Min,
-            Max = card.Max,
-            Enabled = card.Enabled,
-        }).ToList();
+            axisSnapshots.Add(new HapticAxisSnapshot
+            {
+                Id = card.AxisId,
+                Min = card.Min,
+                Max = card.Max,
+                Enabled = card.Enabled,
+            });
+        }
 
-        context.Events.Publish(new HapticAxisConfigEvent { Axes = snapshots });
+        context.Events.Publish(new HapticAxisConfigEvent { Axes = axisSnapshots });
     }
 
     // ── Native library loading ─────────────────────────────
