@@ -18,6 +18,16 @@ public partial class VisualizerView : UserControl
 {
     private VisualizerViewModel? _viewModel;
     private SKElement? _skiaCanvas;
+    private SKPaint? _gridPaint;
+    private SKPaint? _axisPaint;
+    private SKPath? _axisPath;
+    private SKPaint? _heatmapPaint;
+    private SKPaint? _cursorPaint;
+    private SKPaint? _timePaint;
+    private SKPaint? _legendTextPaint;
+    private SKPaint? _legendBoxPaint;
+    private SKTypeface? _consolasTypeface;
+    private SKTypeface? _segoeTypeface;
 
     // ── Heatmap color stops (speed → color) ──────────────────
     private static readonly (float speed, SKColor color)[] HeatmapStops =
@@ -33,6 +43,7 @@ public partial class VisualizerView : UserControl
     public VisualizerView()
     {
         InitializeComponent();
+        EnsureRenderResources();
 
         // Create SKElement in code-behind so InitializeComponent() won't
         // fail if SkiaSharp assemblies or native libraries aren't resolved yet.
@@ -50,7 +61,115 @@ public partial class VisualizerView : UserControl
         }
 
         DataContextChanged += OnDataContextChanged;
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        EnsureRenderResources();
         CompositionTarget.Rendering += OnRendering;
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        CompositionTarget.Rendering -= OnRendering;
+        DisposeRenderResources();
+    }
+
+    private void EnsureRenderResources()
+    {
+        _consolasTypeface ??= SKTypeface.FromFamilyName("Consolas");
+        _segoeTypeface ??= SKTypeface.FromFamilyName("Segoe UI");
+
+        _gridPaint ??= new SKPaint
+        {
+            Color = SKColor.Parse("#2A2A2A"),
+            StrokeWidth = 1,
+            IsAntialias = false,
+            Style = SKPaintStyle.Stroke,
+        };
+
+        _axisPaint ??= new SKPaint
+        {
+            StrokeWidth = 1.5f,
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+            StrokeCap = SKStrokeCap.Round,
+            StrokeJoin = SKStrokeJoin.Round,
+        };
+
+        _axisPath ??= new SKPath();
+
+        _heatmapPaint ??= new SKPaint
+        {
+            Style = SKPaintStyle.Fill,
+            IsAntialias = false,
+        };
+
+        _cursorPaint ??= new SKPaint
+        {
+            Color = SKColors.White.WithAlpha(200),
+            StrokeWidth = 1.5f,
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke,
+        };
+
+        _timePaint ??= new SKPaint
+        {
+            Color = SKColor.Parse("#555555"),
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill,
+            TextSize = 10,
+            Typeface = _consolasTypeface,
+        };
+
+        _legendTextPaint ??= new SKPaint
+        {
+            IsAntialias = true,
+            Style = SKPaintStyle.Fill,
+            TextSize = 11,
+            Typeface = _segoeTypeface,
+        };
+
+        _legendBoxPaint ??= new SKPaint
+        {
+            Style = SKPaintStyle.Fill,
+            IsAntialias = true,
+        };
+    }
+
+    private void DisposeRenderResources()
+    {
+        _gridPaint?.Dispose();
+        _gridPaint = null;
+
+        _axisPaint?.Dispose();
+        _axisPaint = null;
+
+        _axisPath?.Dispose();
+        _axisPath = null;
+
+        _heatmapPaint?.Dispose();
+        _heatmapPaint = null;
+
+        _cursorPaint?.Dispose();
+        _cursorPaint = null;
+
+        _timePaint?.Dispose();
+        _timePaint = null;
+
+        _legendTextPaint?.Dispose();
+        _legendTextPaint = null;
+
+        _legendBoxPaint?.Dispose();
+        _legendBoxPaint = null;
+
+        _consolasTypeface?.Dispose();
+        _consolasTypeface = null;
+
+        _segoeTypeface?.Dispose();
+        _segoeTypeface = null;
     }
 
     // ── DataContext wiring ────────────────────────────────────
@@ -165,22 +284,17 @@ public partial class VisualizerView : UserControl
     //  Graph Mode — Grid, Axes, Cursor, Legend
     // ══════════════════════════════════════════════════════════
 
-    private static void DrawGrid(SKCanvas canvas, float left, float top,
+    private void DrawGrid(SKCanvas canvas, float left, float top,
         float width, float height, double windowStart, double windowEnd)
     {
-        using var gridPaint = new SKPaint
-        {
-            Color = SKColor.Parse("#2A2A2A"),
-            StrokeWidth = 1,
-            IsAntialias = false,
-            Style = SKPaintStyle.Stroke,
-        };
+        if (_gridPaint == null)
+            return;
 
         // Horizontal grid lines at position 0, 25, 50, 75, 100
         for (int pos = 0; pos <= 100; pos += 25)
         {
             float y = top + height - (pos / 100f * height);
-            canvas.DrawLine(left, y, left + width, y, gridPaint);
+            canvas.DrawLine(left, y, left + width, y, _gridPaint);
         }
 
         // Vertical grid lines every 5 seconds
@@ -189,29 +303,21 @@ public partial class VisualizerView : UserControl
         {
             var x = left + (float)((t - windowStart) / (windowEnd - windowStart) * width);
             if (x >= left && x <= left + width)
-                canvas.DrawLine(x, top, x, top + height, gridPaint);
+                canvas.DrawLine(x, top, x, top + height, _gridPaint);
         }
     }
 
-    private static void DrawAxis(SKCanvas canvas, FunscriptData data,
+    private void DrawAxis(SKCanvas canvas, FunscriptData data,
         float left, float top, float width, float height,
         double windowStart, double windowEnd, string colorHex)
     {
-        if (data.Actions.Count == 0)
+        if (data.Actions.Count == 0 || _axisPaint == null || _axisPath == null)
             return;
 
-        using var paint = new SKPaint
-        {
-            Color = SKColor.Parse(colorHex),
-            StrokeWidth = 1.5f,
-            IsAntialias = true,
-            Style = SKPaintStyle.Stroke,
-            StrokeCap = SKStrokeCap.Round,
-            StrokeJoin = SKStrokeJoin.Round,
-        };
+        _axisPaint.Color = SKColor.Parse(colorHex);
+        _axisPath.Reset();
 
         var windowDuration = windowEnd - windowStart;
-        using var path = new SKPath();
         bool started = false;
 
         // Binary search for the first action in the visible window (with 1s padding)
@@ -232,17 +338,17 @@ public partial class VisualizerView : UserControl
 
             if (!started)
             {
-                path.MoveTo(x, y);
+                _axisPath.MoveTo(x, y);
                 started = true;
             }
             else
             {
-                path.LineTo(x, y);
+                _axisPath.LineTo(x, y);
             }
         }
 
         if (started)
-            canvas.DrawPath(path, paint);
+            canvas.DrawPath(_axisPath, _axisPaint);
     }
 
     // ══════════════════════════════════════════════════════════
@@ -258,11 +364,8 @@ public partial class VisualizerView : UserControl
             data.Actions.Count < 2)
             return;
 
-        using var barPaint = new SKPaint
-        {
-            Style = SKPaintStyle.Fill,
-            IsAntialias = false,
-        };
+        if (_heatmapPaint == null)
+            return;
 
         var windowDuration = windowEnd - windowStart;
         int pixelWidth = (int)width;
@@ -289,9 +392,9 @@ public partial class VisualizerView : UserControl
                 ? Math.Abs(a1.Pos - a0.Pos) / (dtMs / 1000.0)
                 : 0;
 
-            barPaint.Color = SpeedToColor((float)speed);
+            _heatmapPaint.Color = SpeedToColor((float)speed);
             float x = left + px;
-            canvas.DrawRect(x, top, 1, height, barPaint);
+            canvas.DrawRect(x, top, 1, height, _heatmapPaint);
         }
     }
 
@@ -329,34 +432,23 @@ public partial class VisualizerView : UserControl
     //  Shared — Cursor, Time Labels, Legend, Binary Search
     // ══════════════════════════════════════════════════════════
 
-    private static void DrawCursor(SKCanvas canvas, float left, float top,
+    private void DrawCursor(SKCanvas canvas, float left, float top,
         float width, float height, double currentTime,
         double windowStart, double windowEnd)
     {
+        if (_cursorPaint == null)
+            return;
+
         var x = left + (float)((currentTime - windowStart) / (windowEnd - windowStart) * width);
 
-        using var cursorPaint = new SKPaint
-        {
-            Color = SKColors.White.WithAlpha(200),
-            StrokeWidth = 1.5f,
-            IsAntialias = true,
-            Style = SKPaintStyle.Stroke,
-        };
-
-        canvas.DrawLine(x, top, x, top + height, cursorPaint);
+        canvas.DrawLine(x, top, x, top + height, _cursorPaint);
     }
 
-    private static void DrawTimeLabels(SKCanvas canvas, float left, float top,
+    private void DrawTimeLabels(SKCanvas canvas, float left, float top,
         float width, float height, double windowStart, double windowEnd)
     {
-        using var timePaint = new SKPaint
-        {
-            Color = SKColor.Parse("#555555"),
-            IsAntialias = true,
-            Style = SKPaintStyle.Fill,
-            TextSize = 10,
-            Typeface = SKTypeface.FromFamilyName("Consolas"),
-        };
+        if (_timePaint == null)
+            return;
 
         var startSecond = Math.Ceiling(windowStart / 5.0) * 5.0;
         for (var t = startSecond; t <= windowEnd; t += 5.0)
@@ -370,53 +462,37 @@ public partial class VisualizerView : UserControl
             var minutes = (int)(t / 60);
             var seconds = (int)(t % 60);
             var label = $"{minutes}:{seconds:D2}";
-            canvas.DrawText(label, x + 2, top + height - 2, timePaint);
+            canvas.DrawText(label, x + 2, top + height - 2, _timePaint);
         }
     }
 
     private void DrawLegend(SKCanvas canvas, float canvasWidth)
     {
-        if (_viewModel == null) return;
-
-        using var textPaint = new SKPaint
-        {
-            IsAntialias = true,
-            Style = SKPaintStyle.Fill,
-            TextSize = 11,
-            Typeface = SKTypeface.FromFamilyName("Segoe UI"),
-        };
-        using var boxPaint = new SKPaint
-        {
-            Style = SKPaintStyle.Fill,
-            IsAntialias = true,
-        };
+        if (_viewModel == null || _legendTextPaint == null || _legendBoxPaint == null)
+            return;
 
         float x = 8f;
         float y = 14f;
 
-        // In heatmap mode, only show L0 legend
-        var axes = _viewModel.SelectedMode == VisualizationMode.Heatmap
-            ? _viewModel.LoadedAxes
-                .Where(kv => kv.Key == "L0")
-                .Select(kv => (kv.Key, kv.Value))
-            : _viewModel.LoadedAxes
-                .Select(kv => (kv.Key, kv.Value));
-
-        foreach (var (axisId, _) in axes)
+        foreach (var axis in _viewModel.LoadedAxes)
         {
+            var axisId = axis.Key;
+            if (_viewModel.SelectedMode == VisualizationMode.Heatmap && axisId != "L0")
+                continue;
+
             var colorHex = VisualizerViewModel.AxisColors.GetValueOrDefault(axisId, "#FFFFFF");
             var name = VisualizerViewModel.AxisNames.GetValueOrDefault(axisId, axisId);
             var color = SKColor.Parse(colorHex);
 
             // Color square
-            boxPaint.Color = color;
-            canvas.DrawRect(x, y - 8, 10, 10, boxPaint);
+            _legendBoxPaint.Color = color;
+            canvas.DrawRect(x, y - 8, 10, 10, _legendBoxPaint);
 
             // Axis name label
-            textPaint.Color = SKColor.Parse("#AAAAAA");
+            _legendTextPaint.Color = SKColor.Parse("#AAAAAA");
             x += 14;
-            canvas.DrawText(name, x, y, textPaint);
-            x += textPaint.MeasureText(name) + 12;
+            canvas.DrawText(name, x, y, _legendTextPaint);
+            x += _legendTextPaint.MeasureText(name) + 12;
         }
     }
 
