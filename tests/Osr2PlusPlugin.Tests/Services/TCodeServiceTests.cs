@@ -496,6 +496,36 @@ public class TCodeServiceTests : IDisposable
         }
     }
 
+    [Fact]
+    public void OutputTick_UsesSpanSendOverload_ForHotPath()
+    {
+        var scripts = new Dictionary<string, FunscriptData>
+        {
+            ["L0"] = new FunscriptData
+            {
+                Actions = new List<FunscriptAction>
+                {
+                    new(0, 0),
+                    new(1000, 100)
+                }
+            }
+        };
+
+        _transport.StringSendCount = 0;
+        _transport.SpanSendCount = 0;
+
+        _sut.SetScripts(scripts);
+        _sut.SetPlaying(true);
+        _sut.SetTime(500);
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        Assert.True(_transport.SpanSendCount > 0, "Expected OutputTick to send via span overload");
+        Assert.Equal(0, _transport.StringSendCount);
+    }
+
     // ===== Fill Mode — Pattern Fill =====
 
     [Fact]
@@ -1573,12 +1603,23 @@ public class TCodeServiceTests : IDisposable
         public bool IsConnected { get; set; } = true;
         public string? ConnectionLabel => "Mock";
         public List<string> SentMessages { get; } = new();
+        public int StringSendCount { get; set; }
+        public int SpanSendCount { get; set; }
 
         public event Action<bool>? ConnectionChanged;
         public event Action<string>? ErrorOccurred;
 
-        public void Send(string data) => SentMessages.Add(data);
-        public void Send(ReadOnlySpan<byte> data) => SentMessages.Add(System.Text.Encoding.UTF8.GetString(data));
+        public void Send(string data)
+        {
+            StringSendCount++;
+            SentMessages.Add(data);
+        }
+
+        public void Send(ReadOnlySpan<byte> data)
+        {
+            SpanSendCount++;
+            SentMessages.Add(System.Text.Encoding.UTF8.GetString(data));
+        }
         public void Disconnect() { IsConnected = false; }
         public void Dispose() { }
 
