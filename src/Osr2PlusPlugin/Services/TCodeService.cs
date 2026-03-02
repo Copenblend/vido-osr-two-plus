@@ -50,6 +50,11 @@ public class TCodeService : IDisposable
     // Dirty value tracking: only send axes whose TCode value changed
     private readonly Dictionary<string, int> _lastSentValues = new();
 
+    // Reused output command buffer for allocation-free hot-path formatting.
+    // 4 axes × (~12 bytes per command) + separators/newline fits comfortably.
+    private readonly byte[] _commandBuffer = new byte[128];
+    private int _commandLength;
+
     // ===== Fill Mode State =====
 
     /// <summary>Maximum position (0–100) for any pitch (R2) fill mode.</summary>
@@ -527,8 +532,7 @@ public class TCodeService : IDisposable
         // This tells the device how long to take reaching the target position.
         var intervalMs = (int)Math.Floor(elapsedSec * 1000.0 + 0.75);
         intervalMs = Math.Max(1, intervalMs);
-
-        var parts = new List<string>();
+        _commandLength = 0;
 
         // === First pass: compute L0 stroke position for random sync ===
         double strokePosition = 50.0;
@@ -560,7 +564,7 @@ public class TCodeService : IDisposable
             // Disabled axis: finish return-to-center, skip everything else
             if (!config.Enabled)
             {
-                ProcessReturnToCenter(config, intervalMs, parts);
+                ProcessReturnToCenter(config, intervalMs);
                 continue;
             }
 
@@ -637,7 +641,7 @@ public class TCodeService : IDisposable
                 var testTcode = ApplyPositionOffset(config, PositionToTCode(config, testPosition));
                 if (IsDirty(config.Id, testTcode))
                 {
-                    parts.Add(FormatTCodeCommand(config, testTcode, intervalMs));
+                    AppendCommand(config, testTcode, intervalMs);
                     _lastSentValues[config.Id] = testTcode;
                 }
                 continue; // Skip normal playback for this axis
@@ -652,7 +656,7 @@ public class TCodeService : IDisposable
                     var extTcode = ApplyPositionOffset(config, PositionToTCode(config, _extPosValues[externalIndex]));
                     if (IsDirty(config.Id, extTcode))
                     {
-                        parts.Add(FormatTCodeCommand(config, extTcode, intervalMs));
+                        AppendCommand(config, extTcode, intervalMs);
                         _lastSentValues[config.Id] = extTcode;
                     }
                     continue;
@@ -667,7 +671,7 @@ public class TCodeService : IDisposable
 
                 if (IsDirty(config.Id, tcodeValue))
                 {
-                    parts.Add(FormatTCodeCommand(config, tcodeValue, intervalMs));
+                    AppendCommand(config, tcodeValue, intervalMs);
                     _lastSentValues[config.Id] = tcodeValue;
                 }
                 continue;
@@ -677,7 +681,7 @@ public class TCodeService : IDisposable
             // Fill patterns only generate output during playback
             if (config.FillMode == AxisFillMode.None || !_isPlaying)
             {
-                ProcessReturnToCenter(config, intervalMs, parts);
+                ProcessReturnToCenter(config, intervalMs);
                 continue;
             }
 
@@ -697,7 +701,7 @@ public class TCodeService : IDisposable
                 {
                     if (!hasStrokeScript)
                     {
-                        ProcessReturnToCenter(config, intervalMs, parts);
+                        ProcessReturnToCenter(config, intervalMs);
                         continue;
                     }
                     progress = _cumulativeStrokeDistance;
@@ -723,7 +727,7 @@ public class TCodeService : IDisposable
                 var randomVal = ApplyRampUp(config.Id, targetVal);
                 if (IsDirty(config.Id, randomVal))
                 {
-                    parts.Add(FormatTCodeCommand(config, randomVal, intervalMs));
+                    AppendCommand(config, randomVal, intervalMs);
                     _lastSentValues[config.Id] = randomVal;
                 }
                 continue;
@@ -734,7 +738,7 @@ public class TCodeService : IDisposable
                 // When synced to stroke, only move if stroke script is loaded
                 if (config.SyncWithStroke && config.Id != "L0" && !hasStrokeScript)
                 {
-                    ProcessReturnToCenter(config, intervalMs, parts);
+                    ProcessReturnToCenter(config, intervalMs);
                     continue;
                 }
 
@@ -766,15 +770,16 @@ public class TCodeService : IDisposable
                 var finalVal = ApplyRampUp(config.Id, targetVal);
                 if (IsDirty(config.Id, finalVal))
                 {
-                    parts.Add(FormatTCodeCommand(config, finalVal, intervalMs));
+                    AppendCommand(config, finalVal, intervalMs);
                     _lastSentValues[config.Id] = finalVal;
                 }
             }
         }
 
-        if (parts.Count > 0)
+        if (_commandLength > 0)
         {
-            _transport?.Send(string.Join(" ", parts) + "\n");
+            WriteByte((byte)'\n');
+            _transport?.Send(_commandBuffer.AsSpan(0, _commandLength));
         }
     }
 
@@ -805,7 +810,7 @@ public class TCodeService : IDisposable
     /// Processes return-to-center animation for disabled or fill-mode-None axes.
     /// Exponential smoothing glide to midpoint (500) at factor 0.04/tick.
     /// </summary>
-    private void ProcessReturnToCenter(AxisConfig config, int intervalMs, List<string> parts)
+    private void ProcessReturnToCenter(AxisConfig config, int intervalMs)
     {
         if (!_returningAxes.TryGetValue(config.Id, out var currentPos))
             return;
@@ -826,9 +831,88 @@ public class TCodeService : IDisposable
 
         if (IsDirty(config.Id, newVal))
         {
-            parts.Add(FormatTCodeCommand(config, newVal, intervalMs));
+            AppendCommand(config, newVal, intervalMs);
             _lastSentValues[config.Id] = newVal;
         }
+    }
+
+    /// <summary>
+    /// Appends one axis command to the output buffer, inserting a separator when needed.
+    /// </summary>
+    /// <param name="config">Axis configuration for prefix and axis number.</param>
+    /// <param name="tcodeValue">Three-digit TCode value (0-999).</param>
+    /// <param name="intervalMs">Move interval in milliseconds.</param>
+    private void AppendCommand(AxisConfig config, int tcodeValue, int intervalMs)
+    {
+        if (_commandLength > 0)
+            WriteByte((byte)' ');
+
+        FormatTCodeCommandToBuffer(config, tcodeValue, intervalMs);
+    }
+
+    /// <summary>
+    /// Writes one TCode command directly into the reusable output buffer.
+    /// </summary>
+    /// <param name="config">Axis configuration for prefix and axis number.</param>
+    /// <param name="tcodeValue">Three-digit TCode value (0-999).</param>
+    /// <param name="intervalMs">Move interval in milliseconds.</param>
+    private void FormatTCodeCommandToBuffer(AxisConfig config, int tcodeValue, int intervalMs)
+    {
+        WriteByte((byte)(config.Type == "rotation" ? 'R' : 'L'));
+        WriteByte((byte)config.Id[1]);
+        WriteInt3(tcodeValue);
+        WriteByte((byte)'I');
+        WriteInt(intervalMs);
+    }
+
+    /// <summary>
+    /// Writes a single byte to the output buffer.
+    /// </summary>
+    /// <param name="value">Byte value to append.</param>
+    private void WriteByte(byte value)
+    {
+        _commandBuffer[_commandLength++] = value;
+    }
+
+    /// <summary>
+    /// Writes a non-negative integer using ASCII decimal digits.
+    /// </summary>
+    /// <param name="value">Integer value to write.</param>
+    private void WriteInt(int value)
+    {
+        if (value <= 0)
+        {
+            WriteByte((byte)'0');
+            return;
+        }
+
+        var start = _commandLength;
+        var working = value;
+        while (working > 0)
+        {
+            WriteByte((byte)('0' + (working % 10)));
+            working /= 10;
+        }
+
+        var end = _commandLength - 1;
+        while (start < end)
+        {
+            (_commandBuffer[start], _commandBuffer[end]) = (_commandBuffer[end], _commandBuffer[start]);
+            start++;
+            end--;
+        }
+    }
+
+    /// <summary>
+    /// Writes a zero-padded three-digit integer (000-999).
+    /// </summary>
+    /// <param name="value">Integer value in range 0-999.</param>
+    private void WriteInt3(int value)
+    {
+        var clamped = Math.Clamp(value, 0, 999);
+        WriteByte((byte)('0' + (clamped / 100)));
+        WriteByte((byte)('0' + ((clamped / 10) % 10)));
+        WriteByte((byte)('0' + (clamped % 10)));
     }
 
     /// <summary>
