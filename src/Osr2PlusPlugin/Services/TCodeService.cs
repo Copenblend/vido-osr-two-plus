@@ -35,6 +35,8 @@ public class TCodeService : IDisposable
     // Axis data
     private Dictionary<string, FunscriptData> _scripts = new();
     private List<AxisConfig> _axisConfigs = new();
+    private AxisConfig? _cachedStrokeConfig;
+    private bool _hasActiveFillConfigs;
     private int _offsetMs;
 
     // External axis positions (set by plugins via IEventBus, thread-safe via volatile reference swap)
@@ -70,6 +72,7 @@ public class TCodeService : IDisposable
     // ===== Test Mode State =====
     private readonly object _testLock = new();
     private readonly Dictionary<string, TestAxisState> _testingAxes = new();
+    private readonly List<string> _stoppedTestIds = new(4);
 
     /// <summary>Raised when a test axis finishes ramping down.</summary>
     public event Action<string>? TestAxisStopped;
@@ -128,8 +131,17 @@ public class TCodeService : IDisposable
     /// </summary>
     public void SetAxisConfigs(List<AxisConfig> configs)
     {
+        AxisConfig? cachedStrokeConfig = null;
+        bool hasActiveFillConfigs = false;
+
         foreach (var cfg in configs)
         {
+            if (cachedStrokeConfig == null && cfg.Id == "L0" && cfg.Enabled)
+                cachedStrokeConfig = cfg;
+
+            if (!hasActiveFillConfigs && cfg.Enabled && cfg.FillMode != AxisFillMode.None)
+                hasActiveFillConfigs = true;
+
             bool hasPrev = _prevAxisState.TryGetValue(cfg.Id, out var prev);
             if (hasPrev)
             {
@@ -161,7 +173,10 @@ public class TCodeService : IDisposable
 
             _prevAxisState[cfg.Id] = (cfg.Enabled, cfg.FillMode);
         }
+
         _axisConfigs = configs;
+        _cachedStrokeConfig = cachedStrokeConfig;
+        _hasActiveFillConfigs = hasActiveFillConfigs;
     }
 
     /// <summary>
@@ -362,20 +377,21 @@ public class TCodeService : IDisposable
     /// </summary>
     public void StopAllTestAxes()
     {
-        List<string> stoppedIds;
+        _stoppedTestIds.Clear();
         lock (_testLock)
         {
-            stoppedIds = _testingAxes.Keys.ToList();
+            foreach (var key in _testingAxes.Keys)
+                _stoppedTestIds.Add(key);
             _testingAxes.Clear();
         }
 
         // Send midpoints outside the lock
-        foreach (var id in stoppedIds)
+        foreach (var id in _stoppedTestIds)
         {
             SendMidpoint(id);
         }
 
-        if (stoppedIds.Count > 0)
+        if (_stoppedTestIds.Count > 0)
         {
             AllTestsStopped?.Invoke();
         }
@@ -490,7 +506,7 @@ public class TCodeService : IDisposable
         // === First pass: compute L0 stroke position for random sync ===
         double strokePosition = 50.0;
         bool hasStrokeScript = false;
-        var strokeConfig = _axisConfigs.FirstOrDefault(c => c.Id == "L0" && c.Enabled);
+        var strokeConfig = _cachedStrokeConfig;
         if (strokeConfig != null && _scripts.TryGetValue("L0", out var strokeScript))
         {
             strokePosition = _interpolation.GetPosition(strokeScript, currentTimeMs, "L0");
@@ -793,7 +809,24 @@ public class TCodeService : IDisposable
     private bool HasActiveFillModes()
     {
         return _returningAxes.Count > 0
-            || _axisConfigs.Any(c => c.Enabled && c.FillMode != AxisFillMode.None);
+            || _hasActiveFillConfigs;
+    }
+
+    /// <summary>
+    /// Finds an axis configuration by axis ID.
+    /// </summary>
+    /// <param name="axisId">The axis identifier (for example, L0, R0, R1, R2).</param>
+    /// <returns>The matching axis configuration, or <see langword="null"/> if not found.</returns>
+    private AxisConfig? FindAxisConfig(string axisId)
+    {
+        for (var index = 0; index < _axisConfigs.Count; index++)
+        {
+            var config = _axisConfigs[index];
+            if (config.Id == axisId)
+                return config;
+        }
+
+        return null;
     }
 
     // ===== Helpers =====
@@ -875,7 +908,7 @@ public class TCodeService : IDisposable
     /// </summary>
     private void SendMidpoint(string axisId)
     {
-        var config = _axisConfigs.FirstOrDefault(c => c.Id == axisId);
+        var config = FindAxisConfig(axisId);
         if (config == null || _transport?.IsConnected != true) return;
         _transport.Send(FormatTCodeCommand(config, 500, 500) + "\n");
         _lastSentValues.Remove(axisId);
@@ -888,7 +921,7 @@ public class TCodeService : IDisposable
     /// </summary>
     public void SendPositionWithOffset(string axisId)
     {
-        var config = _axisConfigs.FirstOrDefault(c => c.Id == axisId);
+        var config = FindAxisConfig(axisId);
         if (config == null || _transport?.IsConnected != true) return;
 
         // Use midpoint (50% position) as the base, apply offset
@@ -928,16 +961,4 @@ public class TCodeService : IDisposable
         _transport.Send(string.Join(" ", parts) + "\n");
     }
 
-    // ===== Test Axis State =====
-
-    private class TestAxisState
-    {
-        public double Phase { get; set; }
-        public double CurrentSpeedHz { get; set; }
-        public double TargetSpeedHz { get; set; }
-        public double CurrentAmplitude { get; set; }
-        public double TargetAmplitude { get; set; }
-        public long LastTickAt { get; set; }
-        public double CumulativeProgress { get; set; }
-    }
 }
