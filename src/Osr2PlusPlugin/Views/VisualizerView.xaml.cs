@@ -28,6 +28,7 @@ public partial class VisualizerView : UserControl
     private SKPaint? _legendBoxPaint;
     private SKTypeface? _consolasTypeface;
     private SKTypeface? _segoeTypeface;
+    private bool _needsRepaint = true;
 
     // ── Heatmap color stops (speed → color) ──────────────────
     private static readonly (float speed, SKColor color)[] HeatmapStops =
@@ -177,14 +178,19 @@ public partial class VisualizerView : UserControl
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (_viewModel != null)
+        {
             _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            _viewModel.RepaintRequested -= OnRepaintRequested;
+        }
 
         _viewModel = e.NewValue as VisualizerViewModel;
 
         if (_viewModel != null)
         {
             _viewModel.PropertyChanged += OnViewModelPropertyChanged;
+            _viewModel.RepaintRequested += OnRepaintRequested;
             UpdateEmptyState();
+            _needsRepaint = true;
         }
     }
 
@@ -195,7 +201,13 @@ public partial class VisualizerView : UserControl
                             or nameof(VisualizerViewModel.LoadedAxes))
         {
             UpdateEmptyState();
+            _needsRepaint = true;
         }
+    }
+
+    private void OnRepaintRequested()
+    {
+        _needsRepaint = true;
     }
 
     private void UpdateEmptyState()
@@ -221,8 +233,11 @@ public partial class VisualizerView : UserControl
 
     private void OnRendering(object? sender, EventArgs e)
     {
-        if (_viewModel?.HasScripts == true && IsVisible)
-            _skiaCanvas?.InvalidateVisual();
+        if (!IsVisible || !_needsRepaint)
+            return;
+
+        _needsRepaint = false;
+        _skiaCanvas?.InvalidateVisual();
     }
 
     // ── Paint surface entry point ────────────────────────────
