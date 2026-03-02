@@ -881,6 +881,7 @@ public class AxisCardViewModelTests : IDisposable
         public event Action<string>? ErrorOccurred;
 
         public void Send(string data) => SentMessages.Add(data);
+        public void Send(ReadOnlySpan<byte> data) => SentMessages.Add(System.Text.Encoding.UTF8.GetString(data));
         public void Disconnect() { IsConnected = false; }
         public void Dispose() { }
 

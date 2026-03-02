@@ -35,6 +35,13 @@ public interface ITransportService : IDisposable
     void Send(string data);
 
     /// <summary>
+    /// Sends pre-encoded TCode bytes to the connected device.
+    /// Preferred for allocation-free hot paths.
+    /// </summary>
+    /// <param name="data">The pre-encoded UTF-8 TCode bytes to send.</param>
+    void Send(ReadOnlySpan<byte> data);
+
+    /// <summary>
     /// Disconnects from the device and releases transport resources.
     /// Safe to call when already disconnected.
     /// </summary>

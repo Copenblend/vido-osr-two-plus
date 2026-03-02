@@ -64,6 +64,14 @@ public class UdpTransportService : ITransportService
     /// <inheritdoc/>
     public void Send(string data)
     {
+        Span<byte> buffer = stackalloc byte[Encoding.UTF8.GetMaxByteCount(data.Length)];
+        var written = Encoding.UTF8.GetBytes(data.AsSpan(), buffer);
+        Send(buffer[..written]);
+    }
+
+    /// <inheritdoc/>
+    public void Send(ReadOnlySpan<byte> data)
+    {
         UdpClient? client;
         IPEndPoint? endpoint;
 
@@ -77,8 +85,7 @@ public class UdpTransportService : ITransportService
         {
             try
             {
-                var bytes = Encoding.UTF8.GetBytes(data);
-                client.Send(bytes, bytes.Length, endpoint);
+                client.Send(data, endpoint);
             }
             catch (Exception ex)
             {

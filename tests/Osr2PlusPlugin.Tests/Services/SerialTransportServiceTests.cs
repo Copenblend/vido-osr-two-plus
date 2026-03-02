@@ -92,6 +92,13 @@ public class SerialTransportServiceTests : IDisposable
         Assert.Null(ex);
     }
 
+    [Fact]
+    public void SendSpan_WhenNotConnected_DoesNotThrow()
+    {
+        var ex = Record.Exception(() => _sut.Send("L0500\n"u8.ToArray()));
+        Assert.Null(ex);
+    }
+
     // --- Dispose ---
 
     [Fact]
