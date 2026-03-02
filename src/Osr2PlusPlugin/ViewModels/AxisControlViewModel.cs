@@ -21,6 +21,7 @@ public class AxisControlViewModel : INotifyPropertyChanged
     private readonly FunscriptParser _parser;
     private readonly FunscriptMatcher _matcher;
     private readonly List<AxisConfig> _configs;
+    private readonly Dictionary<string, FunscriptData> _loadedScripts = new(4, StringComparer.OrdinalIgnoreCase);
     private bool _isVideoPlaying;
     private bool _isDeviceConnected;
     private bool _isTesting;
@@ -142,7 +143,7 @@ public class AxisControlViewModel : INotifyPropertyChanged
             multiAxisData = TryParseMultiAxisFunc!(basePath);
         }
 
-        var loadedScripts = new Dictionary<string, FunscriptData>();
+        _loadedScripts.Clear();
 
         foreach (var card in AxisCards)
         {
@@ -155,7 +156,7 @@ public class AxisControlViewModel : INotifyPropertyChanged
                     try
                     {
                         var data = ParseFileFunc!(card.ScriptFileName, card.AxisId);
-                        loadedScripts[card.AxisId] = data;
+                        _loadedScripts[card.AxisId] = data;
                     }
                     catch { /* manual file missing — ignore */ }
                 }
@@ -166,7 +167,7 @@ public class AxisControlViewModel : INotifyPropertyChanged
             if (multiAxisData != null && multiAxisData.TryGetValue(card.AxisId, out var multiData))
             {
                 card.SetAutoLoadedScript(basePath);
-                loadedScripts[card.AxisId] = multiData;
+                _loadedScripts[card.AxisId] = multiData;
                 continue;
             }
 
@@ -177,7 +178,7 @@ public class AxisControlViewModel : INotifyPropertyChanged
                 {
                     var data = ParseFileFunc!(axisPath, card.AxisId);
                     card.SetAutoLoadedScript(axisPath);
-                    loadedScripts[card.AxisId] = data;
+                    _loadedScripts[card.AxisId] = data;
                 }
                 catch { /* parse error — skip axis */ }
             }
@@ -188,8 +189,8 @@ public class AxisControlViewModel : INotifyPropertyChanged
         }
 
         // Push all loaded scripts to TCodeService
-        _tcode.SetScripts(loadedScripts);
-        ScriptsChanged?.Invoke(loadedScripts);
+        _tcode.SetScripts(_loadedScripts);
+        ScriptsChanged?.Invoke(_loadedScripts);
     }
 
     /// <summary>
@@ -198,7 +199,7 @@ public class AxisControlViewModel : INotifyPropertyChanged
     public void ClearScripts()
     {
         _currentVideoPath = null;
-        var remaining = new Dictionary<string, FunscriptData>();
+        _loadedScripts.Clear();
 
         foreach (var card in AxisCards)
         {
@@ -208,7 +209,7 @@ public class AxisControlViewModel : INotifyPropertyChanged
                 try
                 {
                     var data = ParseFileFunc!(card.ScriptFileName, card.AxisId);
-                    remaining[card.AxisId] = data;
+                    _loadedScripts[card.AxisId] = data;
                 }
                 catch { /* manual file missing */ }
             }
@@ -218,8 +219,8 @@ public class AxisControlViewModel : INotifyPropertyChanged
             }
         }
 
-        _tcode.SetScripts(remaining);
-        ScriptsChanged?.Invoke(remaining);
+        _tcode.SetScripts(_loadedScripts);
+        ScriptsChanged?.Invoke(_loadedScripts);
     }
 
     /// <summary>
@@ -230,9 +231,9 @@ public class AxisControlViewModel : INotifyPropertyChanged
         foreach (var card in AxisCards)
             card.ClearAllScripts();
 
-        var empty = new Dictionary<string, FunscriptData>();
-        _tcode.SetScripts(empty);
-        ScriptsChanged?.Invoke(empty);
+        _loadedScripts.Clear();
+        _tcode.SetScripts(_loadedScripts);
+        ScriptsChanged?.Invoke(_loadedScripts);
     }
 
     /// <summary>
