@@ -29,7 +29,7 @@ public class BeatBarViewModel : INotifyPropertyChanged
     private readonly List<IExternalBeatSource> _externalSources = [];
 
     // External beats provided by plugins (keyed by source ID)
-    private List<double> _externalBeats = new();
+    private readonly List<double> _externalBeats = new();
 
     // Suppress settings save when loading from store or external change
     private bool _suppressSave;
@@ -193,8 +193,8 @@ public class BeatBarViewModel : INotifyPropertyChanged
     public void ClearBeats()
     {
         _currentScript = null;
-        Beats = new List<double>();
-        _externalBeats = new List<double>();
+        _externalBeats.Clear();
+        Beats = _externalBeats;
         OnPropertyChanged(nameof(IsActive));
         RepaintRequested?.Invoke();
     }
@@ -242,7 +242,7 @@ public class BeatBarViewModel : INotifyPropertyChanged
     {
         if (_mode.IsExternal && _mode.Id == beatEvent.SourceId)
         {
-            _externalBeats = beatEvent.BeatTimesMs.ToArray().ToList();
+            CopyBeatTimesToExternalBeats(beatEvent.BeatTimesMs.Span);
             Beats = _externalBeats;
             OnPropertyChanged(nameof(IsActive));
             RepaintRequested?.Invoke();
@@ -251,9 +251,9 @@ public class BeatBarViewModel : INotifyPropertyChanged
         {
             // Cache external beats even if not the current mode, so when user switches
             // to the external mode, beats are immediately available
-            if (_externalSources.Any(s => s.Id == beatEvent.SourceId))
+            if (HasExternalSource(beatEvent.SourceId))
             {
-                _externalBeats = beatEvent.BeatTimesMs.ToArray().ToList();
+                CopyBeatTimesToExternalBeats(beatEvent.BeatTimesMs.Span);
             }
         }
     }
@@ -425,6 +425,27 @@ public class BeatBarViewModel : INotifyPropertyChanged
             Beats = _beatDetection.DetectBeats(_currentScript, BeatDetectionMode.OnValley);
         }
         RepaintRequested?.Invoke();
+    }
+
+    private void CopyBeatTimesToExternalBeats(ReadOnlySpan<double> beatTimesMs)
+    {
+        _externalBeats.Clear();
+        if (_externalBeats.Capacity < beatTimesMs.Length)
+            _externalBeats.Capacity = beatTimesMs.Length;
+
+        for (int index = 0; index < beatTimesMs.Length; index++)
+            _externalBeats.Add(beatTimesMs[index]);
+    }
+
+    private bool HasExternalSource(string sourceId)
+    {
+        for (int index = 0; index < _externalSources.Count; index++)
+        {
+            if (_externalSources[index].Id == sourceId)
+                return true;
+        }
+
+        return false;
     }
 
     // ── INotifyPropertyChanged ───────────────────────────────

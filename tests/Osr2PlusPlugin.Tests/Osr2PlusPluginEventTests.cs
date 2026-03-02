@@ -516,6 +516,31 @@ public class Osr2PlusPluginEventTests : IDisposable
         _mockContext.Verify(c => c.RequestShowBottomPanel("osr2-visualizer"), Times.Never);
     }
 
+    [Fact]
+    public void VideoUnloaded_PublishesHapticScriptsChangedEvent_WithNoScripts()
+    {
+        ActivatePlugin();
+
+        _eventBus.Publish(new VideoUnloadedEvent());
+
+        var published = _eventBus.GetPublished<HapticScriptsChangedEvent>();
+        Assert.NotEmpty(published);
+        Assert.False(published[^1].HasAnyScripts);
+    }
+
+    [Fact]
+    public void VideoUnloaded_PublishesHapticScriptsChangedEvent_UsesIndependentAxisScriptLoadedMaps()
+    {
+        ActivatePlugin();
+
+        _eventBus.Publish(new VideoUnloadedEvent());
+        _eventBus.Publish(new VideoUnloadedEvent());
+
+        var published = _eventBus.GetPublished<HapticScriptsChangedEvent>();
+        Assert.True(published.Count >= 2);
+        Assert.False(ReferenceEquals(published[^2].AxisScriptLoaded, published[^1].AxisScriptLoaded));
+    }
+
     // ═══════════════════════════════════════════════════════
     //  Helpers
     // ═══════════════════════════════════════════════════════
@@ -543,12 +568,24 @@ public class Osr2PlusPluginEventTests : IDisposable
     {
         private readonly Dictionary<Type, List<Delegate>> _handlers = new();
         private readonly List<FakeSubscription> _subscriptions = new();
+        private readonly Dictionary<Type, List<object>> _published = new();
 
         public int SubscriptionCount => _subscriptions.Count;
         public int ActiveSubscriptionCount => _subscriptions.Count(s => !s.IsDisposed);
 
         public bool HasSubscription<TEvent>()
             => _handlers.ContainsKey(typeof(TEvent)) && _handlers[typeof(TEvent)].Count > 0;
+
+        public IReadOnlyList<TEvent> GetPublished<TEvent>()
+        {
+            if (!_published.TryGetValue(typeof(TEvent), out var list))
+                return Array.Empty<TEvent>();
+
+            var result = new List<TEvent>(list.Count);
+            foreach (var item in list)
+                result.Add((TEvent)item);
+            return result;
+        }
 
         public IDisposable Subscribe<TEvent>(Action<TEvent> handler)
         {
@@ -567,6 +604,13 @@ public class Osr2PlusPluginEventTests : IDisposable
 
         public void Publish<TEvent>(TEvent eventData)
         {
+            if (!_published.TryGetValue(typeof(TEvent), out var published))
+            {
+                published = new List<object>();
+                _published[typeof(TEvent)] = published;
+            }
+            published.Add(eventData!);
+
             if (!_handlers.TryGetValue(typeof(TEvent), out var list)) return;
             foreach (var handler in list.ToList())
             {
