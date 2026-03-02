@@ -5,6 +5,33 @@ All notable changes to the OSR2+ Plugin for Vido will be documented in this file
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.4.0] - 2026-03-01
+
+### Changed
+
+- Updated to Vido.Core 0.13.0 and Vido.Haptics 3.0.0.
+
+### Performance
+
+- **vido-301** — Removed LINQ allocations from TCode output hot path; cached stroke config, active-fill flag, loop-based axis lookups.
+- **vido-302** — Replaced per-update dictionary for external axis positions with fixed flat arrays, eliminating hash-lookup and allocation overhead.
+- **vido-303** — Added `Send(ReadOnlySpan<byte>)` to transport interface; Serial and UDP transports send without allocating strings.
+- **vido-304** — Replaced per-tick `List<string>` command assembly with a reusable byte buffer for allocation-free TCode formatting.
+- **vido-305** — Verified UDP send path is allocation-free end-to-end; added allocation-focused transport tests.
+- **vido-306** — Pre-allocated all Skia paint/path/typeface objects in the funscript visualizer to eliminate per-frame rendering allocations.
+- **vido-307** — Added dirty-flag gating to the visualizer so it only repaints when data actually changes.
+- **vido-308** — Pre-allocated `SKMaskFilter` blur for beat-bar glow rendering; reused across frames instead of created/disposed each tick.
+- **vido-309** — Removed LINQ and intermediate collection allocations from event-driven paths in `BeatBarViewModel` and `Osr2PlusPlugin`.
+- **vido-310** — Replaced per-call dictionary allocations in script-loading flows with a reusable field-backed dictionary.
+- **vido-311** — Extracted three duplicate nested `RelayCommand` implementations into one shared class.
+- **vido-312** — Replaced DOM-based (`JsonDocument`) funscript parsing with streaming `Utf8JsonReader`; added BOM/encoding normalization.
+- **vido-313** — Added pre-count pass for funscript action arrays so lists are initialized with exact capacity.
+- **vido-314** — Made beat-bar fullscreen margin adjustment event-driven (`SizeChanged`) instead of recalculating every render tick.
+
+### Tests
+
+- Test suite expanded from 641 to 736 tests covering all optimization work.
+
 ## [4.1.0] - 2026-02-26
 
 ### Maintenance / Validation
