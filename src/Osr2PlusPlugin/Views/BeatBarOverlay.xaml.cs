@@ -39,6 +39,7 @@ public partial class BeatBarOverlay : UserControl
     private SKElement? _skiaCanvas;
     private BeatBarViewModel? _viewModel;
     private bool _needsRepaint;
+    private bool _layoutDirty = true;
 
     // Fullscreen detection — cache the host's ControlsOverlay so we
     // can push the beat bar above it when it shares the same Grid row.
@@ -75,6 +76,11 @@ public partial class BeatBarOverlay : UserControl
         EnsureRenderResources();
         CompositionTarget.Rendering += OnRendering;
         _controlsOverlay ??= FindControlsOverlay();
+
+        if (_controlsOverlay != null)
+            _controlsOverlay.SizeChanged += OnControlsOverlaySizeChanged;
+
+        _layoutDirty = true;
     }
 
     /// <summary>
@@ -103,7 +109,16 @@ public partial class BeatBarOverlay : UserControl
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         CompositionTarget.Rendering -= OnRendering;
+
+        if (_controlsOverlay != null)
+            _controlsOverlay.SizeChanged -= OnControlsOverlaySizeChanged;
+
         DisposeRenderResources();
+    }
+
+    private void OnControlsOverlaySizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        _layoutDirty = true;
     }
 
     private void EnsureRenderResources()
@@ -195,7 +210,11 @@ public partial class BeatBarOverlay : UserControl
 
     private void OnRendering(object? sender, EventArgs e)
     {
-        AdjustFullscreenMargin();
+        if (_layoutDirty)
+        {
+            _layoutDirty = false;
+            AdjustFullscreenMargin();
+        }
 
         if (_needsRepaint && IsVisible)
         {
