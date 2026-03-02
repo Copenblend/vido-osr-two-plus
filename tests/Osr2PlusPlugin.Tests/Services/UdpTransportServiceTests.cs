@@ -175,6 +175,46 @@ public class UdpTransportServiceTests : IDisposable
     }
 
     [Fact]
+    public void SendSpan_WhenNotConnected_DoesNotAllocateManagedArrays()
+    {
+        _sut.Disconnect();
+        var payload = "L0500\n"u8.ToArray();
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+
+        for (var i = 0; i < 1000; i++)
+            _sut.Send(payload);
+
+        var after = GC.GetAllocatedBytesForCurrentThread();
+
+        Assert.Equal(0, after - before);
+    }
+
+    [Fact]
+    public void SendString_WhenNotConnected_UsesAllocationFreeEncodingPath()
+    {
+        _sut.Disconnect();
+        const string payload = "L0500\n";
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+
+        for (var i = 0; i < 1000; i++)
+            _sut.Send(payload);
+
+        var after = GC.GetAllocatedBytesForCurrentThread();
+
+        Assert.Equal(0, after - before);
+    }
+
+    [Fact]
     public void Send_AfterDisconnect_DoesNotThrow()
     {
         _sut.Connect(12345);
