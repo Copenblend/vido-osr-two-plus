@@ -77,6 +77,27 @@ public class FunscriptParserTests
         Assert.Equal(3000, result.Actions[2].AtMs);
     }
 
+    [Fact]
+    public void Parse_PreSortedActions_PreservesOrder()
+    {
+        var json = """
+        {
+            "actions": [
+                { "at": 1000, "pos": 10 },
+                { "at": 2000, "pos": 20 },
+                { "at": 3000, "pos": 30 }
+            ]
+        }
+        """;
+
+        var result = _sut.Parse(json);
+
+        Assert.Equal(3, result.Actions.Count);
+        Assert.Equal(1000, result.Actions[0].AtMs);
+        Assert.Equal(2000, result.Actions[1].AtMs);
+        Assert.Equal(3000, result.Actions[2].AtMs);
+    }
+
     // --- Parse: pos clamping ---
 
     [Fact]
@@ -176,6 +197,44 @@ public class FunscriptParserTests
 
         Assert.Single(result.Actions);
         Assert.Equal(2000, result.Actions[0].AtMs);
+    }
+
+    [Fact]
+    public void Parse_ActionWithNonNumericFields_SkipsInvalidAction()
+    {
+        var json = """
+        {
+            "actions": [
+                { "at": "1000", "pos": 50 },
+                { "at": 2000, "pos": "75" },
+                { "at": 3000, "pos": 90 }
+            ]
+        }
+        """;
+
+        var result = _sut.Parse(json);
+
+        Assert.Single(result.Actions);
+        Assert.Equal(3000, result.Actions[0].AtMs);
+        Assert.Equal(90, result.Actions[0].Pos);
+    }
+
+    [Fact]
+    public void Parse_LargeActionsArray_ParsesAllActions()
+    {
+        var parts = new List<string>(2000);
+        for (int i = 0; i < 2000; i++)
+        {
+            parts.Add($"{{ \"at\": {i * 10}, \"pos\": {i % 101} }}");
+        }
+
+        var json = "{\"actions\":[" + string.Join(',', parts) + "]}";
+
+        var result = _sut.Parse(json);
+
+        Assert.Equal(2000, result.Actions.Count);
+        Assert.Equal(0, result.Actions[0].AtMs);
+        Assert.Equal(19990, result.Actions[^1].AtMs);
     }
 
     // --- ParseFile ---
@@ -455,6 +514,42 @@ public class FunscriptParserTests
             Assert.NotNull(result);
             Assert.Single(result!); // Only L0, R0 has no actions
             Assert.False(result.ContainsKey("R0"));
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void TryParseMultiAxis_AxisActionsUnsorted_AreSortedAscending()
+    {
+        var tempFile = System.IO.Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(tempFile, """
+            {
+                "actions": [{ "at": 0, "pos": 50 }],
+                "axes": [
+                    {
+                        "id": "R0",
+                        "actions": [
+                            { "at": 300, "pos": 30 },
+                            { "at": 100, "pos": 10 },
+                            { "at": 200, "pos": 20 }
+                        ]
+                    }
+                ]
+            }
+            """);
+
+            var result = _sut.TryParseMultiAxis(tempFile);
+
+            Assert.NotNull(result);
+            Assert.True(result!.ContainsKey("R0"));
+            Assert.Equal(100, result["R0"].Actions[0].AtMs);
+            Assert.Equal(200, result["R0"].Actions[1].AtMs);
+            Assert.Equal(300, result["R0"].Actions[2].AtMs);
         }
         finally
         {
