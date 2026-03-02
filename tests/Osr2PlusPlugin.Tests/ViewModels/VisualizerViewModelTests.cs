@@ -565,6 +565,28 @@ public class VisualizerViewModelTests
         Assert.Equal(1, count);
     }
 
+    [Fact]
+    public void RepaintRequested_FiredOnSelectedModeChange()
+    {
+        int count = 0;
+        _sut.RepaintRequested += () => count++;
+
+        _sut.SelectedMode = VisualizationMode.Heatmap;
+
+        Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public void RepaintRequested_FiredOnWindowDurationChange()
+    {
+        int count = 0;
+        _sut.RepaintRequested += () => count++;
+
+        _sut.WindowDurationSeconds = 120;
+
+        Assert.Equal(1, count);
+    }
+
     // ═══════════════════════════════════════════════════════
     //  Complete Workflow
     // ═══════════════════════════════════════════════════════

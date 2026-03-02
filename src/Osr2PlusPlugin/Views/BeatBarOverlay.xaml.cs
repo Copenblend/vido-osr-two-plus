@@ -28,11 +28,12 @@ public partial class BeatBarOverlay : UserControl
     private const byte BackgroundAlpha = 0x60;
 
     // ── Pre-allocated paints (reused every frame) ────────────
-    private readonly SKPaint _backgroundPaint;
-    private readonly SKPaint _beatDotPaint;
-    private readonly SKPaint _indicatorPaint;
-    private readonly SKPaint _glowPaint;
-    private readonly SKPaint _trackLinePaint;
+    private SKPaint? _backgroundPaint;
+    private SKPaint? _beatDotPaint;
+    private SKPaint? _indicatorPaint;
+    private SKPaint? _glowPaint;
+    private SKPaint? _trackLinePaint;
+    private SKMaskFilter? _glowBlurFilter;
 
     // ── State ────────────────────────────────────────────────
     private SKElement? _skiaCanvas;
@@ -48,44 +49,7 @@ public partial class BeatBarOverlay : UserControl
     {
         InitializeComponent();
 
-        // Pre-allocate paints
-        _backgroundPaint = new SKPaint
-        {
-            Color = new SKColor(0, 0, 0, BackgroundAlpha),
-            Style = SKPaintStyle.Fill,
-            IsAntialias = true,
-        };
-
-        _beatDotPaint = new SKPaint
-        {
-            Color = SKColor.Parse("#F0F0F0"),
-            Style = SKPaintStyle.Fill,
-            IsAntialias = true,
-        };
-
-        _indicatorPaint = new SKPaint
-        {
-            Color = SKColor.Parse("#007ACC"),
-            Style = SKPaintStyle.Stroke,
-            StrokeWidth = IndicatorStrokeWidth,
-            IsAntialias = true,
-        };
-
-        _glowPaint = new SKPaint
-        {
-            Color = SKColor.Parse("#33AAEE"),  // lighter blue for flash effect
-            Style = SKPaintStyle.Stroke,
-            StrokeWidth = GlowStrokeWidth,
-            IsAntialias = true,
-        };
-
-        _trackLinePaint = new SKPaint
-        {
-            Color = new SKColor(255, 255, 255, 40),  // subtle white line
-            Style = SKPaintStyle.Stroke,
-            StrokeWidth = 1.5f,
-            IsAntialias = true,
-        };
+        EnsureRenderResources();
 
         // Create SKElement in code-behind (same pattern as VisualizerView)
         try
@@ -108,6 +72,7 @@ public partial class BeatBarOverlay : UserControl
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        EnsureRenderResources();
         CompositionTarget.Rendering += OnRendering;
         _controlsOverlay ??= FindControlsOverlay();
     }
@@ -138,6 +103,74 @@ public partial class BeatBarOverlay : UserControl
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         CompositionTarget.Rendering -= OnRendering;
+        DisposeRenderResources();
+    }
+
+    private void EnsureRenderResources()
+    {
+        _backgroundPaint ??= new SKPaint
+        {
+            Color = new SKColor(0, 0, 0, BackgroundAlpha),
+            Style = SKPaintStyle.Fill,
+            IsAntialias = true,
+        };
+
+        _beatDotPaint ??= new SKPaint
+        {
+            Color = SKColor.Parse("#F0F0F0"),
+            Style = SKPaintStyle.Fill,
+            IsAntialias = true,
+        };
+
+        _indicatorPaint ??= new SKPaint
+        {
+            Color = SKColor.Parse("#007ACC"),
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = IndicatorStrokeWidth,
+            IsAntialias = true,
+        };
+
+        _glowPaint ??= new SKPaint
+        {
+            Color = SKColor.Parse("#33AAEE"),
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = GlowStrokeWidth,
+            IsAntialias = true,
+        };
+
+        _trackLinePaint ??= new SKPaint
+        {
+            Color = new SKColor(255, 255, 255, 40),
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = 1.5f,
+            IsAntialias = true,
+        };
+
+        _glowBlurFilter ??= SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 8f);
+    }
+
+    private void DisposeRenderResources()
+    {
+        if (_glowPaint != null)
+            _glowPaint.MaskFilter = null;
+
+        _backgroundPaint?.Dispose();
+        _backgroundPaint = null;
+
+        _beatDotPaint?.Dispose();
+        _beatDotPaint = null;
+
+        _indicatorPaint?.Dispose();
+        _indicatorPaint = null;
+
+        _glowPaint?.Dispose();
+        _glowPaint = null;
+
+        _trackLinePaint?.Dispose();
+        _trackLinePaint = null;
+
+        _glowBlurFilter?.Dispose();
+        _glowBlurFilter = null;
     }
 
     // ── DataContext wiring ───────────────────────────────────
@@ -199,6 +232,16 @@ public partial class BeatBarOverlay : UserControl
         var canvas = e.Surface.Canvas;
         var info = e.Info;
         canvas.Clear(SKColors.Transparent);
+
+        if (_backgroundPaint == null ||
+            _beatDotPaint == null ||
+            _indicatorPaint == null ||
+            _glowPaint == null ||
+            _trackLinePaint == null ||
+            _glowBlurFilter == null)
+        {
+            return;
+        }
 
         if (_viewModel == null || !_viewModel.IsActive)
             return;
@@ -290,14 +333,12 @@ public partial class BeatBarOverlay : UserControl
 
             _glowPaint.Color = new SKColor(51, 170, 238, glowAlpha);
             _glowPaint.StrokeWidth = scaledGlowStroke;
-            _glowPaint.MaskFilter = SKMaskFilter.CreateBlur(
-                SKBlurStyle.Normal, 8f);
+            _glowPaint.MaskFilter = _glowBlurFilter;
 
             // Draw glow ring on the outer edge of the scaled indicator
             canvas.DrawCircle(indicatorX, centerY,
                 scaledIndicatorRadius + scaledGlowStroke / 2f, _glowPaint);
 
-            _glowPaint.MaskFilter?.Dispose();
             _glowPaint.MaskFilter = null;
             _glowPaint.StrokeWidth = GlowStrokeWidth;
         }

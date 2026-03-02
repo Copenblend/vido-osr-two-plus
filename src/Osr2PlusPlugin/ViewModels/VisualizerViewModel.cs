@@ -65,7 +65,10 @@ public class VisualizerViewModel : INotifyPropertyChanged
         set
         {
             if (Set(ref _selectedMode, value))
+            {
                 _settings.Set("visualizerMode", value.ToString());
+                RepaintRequested?.Invoke();
+            }
         }
     }
 
@@ -83,6 +86,7 @@ public class VisualizerViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(TimeWindowRadius));
                 OnPropertyChanged(nameof(WindowDurationIndex));
                 _settings.Set("visualizerWindowDuration", value.ToString());
+                RepaintRequested?.Invoke();
             }
         }
     }
