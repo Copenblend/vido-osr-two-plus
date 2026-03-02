@@ -44,7 +44,8 @@ public class FunscriptParser
     public FunscriptData ParseFile(string filePath, string axisId = "L0")
     {
         var bytes = File.ReadAllBytes(filePath);
-        var data = ParseFromBytes(bytes.AsSpan(), axisId);
+        var jsonBytes = GetNormalizedUtf8Bytes(bytes, out var transcodedBytes);
+        var data = ParseFromBytes(jsonBytes, axisId);
         data.FilePath = filePath;
         return data;
     }
@@ -61,7 +62,8 @@ public class FunscriptParser
         try
         {
             var bytes = File.ReadAllBytes(filePath);
-            var reader = new Utf8JsonReader(bytes.AsSpan(), CreateReaderOptions());
+            var jsonBytes = GetNormalizedUtf8Bytes(bytes, out var transcodedBytes);
+            var reader = new Utf8JsonReader(jsonBytes, CreateReaderOptions());
 
             bool hasAxesArray = false;
             var result = new Dictionary<string, FunscriptData>(StringComparer.OrdinalIgnoreCase);
@@ -85,7 +87,12 @@ public class FunscriptParser
                         continue;
                     }
 
-                    var l0 = new FunscriptData { AxisId = "L0", FilePath = filePath };
+                    var l0 = new FunscriptData
+                    {
+                        AxisId = "L0",
+                        FilePath = filePath,
+                        Actions = new List<FunscriptAction>(CountActionObjectsInArray(ref reader)),
+                    };
                     ParseActionsFromReader(ref reader, l0.Actions);
                     SortActionsIfNeeded(l0.Actions);
 
@@ -167,6 +174,7 @@ public class FunscriptParser
                     continue;
                 }
 
+                data.Actions = new List<FunscriptAction>(CountActionObjectsInArray(ref reader));
                 ParseActionsFromReader(ref reader, data.Actions);
                 break;
             }
@@ -201,7 +209,7 @@ public class FunscriptParser
             }
 
             string? axisId = null;
-            var axisActions = new List<FunscriptAction>();
+            List<FunscriptAction>? axisActions = null;
 
             while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
             {
@@ -227,7 +235,10 @@ public class FunscriptParser
                         break;
 
                     if (reader.TokenType == JsonTokenType.StartArray)
+                    {
+                        axisActions = new List<FunscriptAction>(CountActionObjectsInArray(ref reader));
                         ParseActionsFromReader(ref reader, axisActions);
+                    }
                     else
                         SkipCurrentValue(ref reader);
 
@@ -240,7 +251,7 @@ public class FunscriptParser
                 SkipCurrentValue(ref reader);
             }
 
-            if (string.IsNullOrEmpty(axisId) || !SupportedAxes.Contains(axisId) || axisActions.Count == 0)
+            if (string.IsNullOrEmpty(axisId) || !SupportedAxes.Contains(axisId) || axisActions == null || axisActions.Count == 0)
                 continue;
 
             SortActionsIfNeeded(axisActions);
@@ -326,6 +337,32 @@ public class FunscriptParser
     }
 
     /// <summary>
+    /// Count action objects in the current JSON array without advancing the original reader.
+    /// </summary>
+    /// <param name="reader">Reader positioned at <see cref="JsonTokenType.StartArray"/>.</param>
+    /// <returns>Number of object entries in the array.</returns>
+    private static int CountActionObjectsInArray(ref Utf8JsonReader reader)
+    {
+        var counter = reader;
+        int count = 0;
+
+        while (counter.Read() && counter.TokenType != JsonTokenType.EndArray)
+        {
+            if (counter.TokenType == JsonTokenType.StartObject)
+            {
+                count++;
+                counter.Skip();
+            }
+            else if (counter.TokenType is JsonTokenType.StartArray)
+            {
+                counter.Skip();
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>
     /// Sort actions only when input is not already ascending by timestamp.
     /// </summary>
     /// <param name="actions">Action list to inspect and conditionally sort.</param>
@@ -367,4 +404,38 @@ public class FunscriptParser
             CommentHandling = JsonCommentHandling.Skip,
             AllowTrailingCommas = true,
         };
+
+    /// <summary>
+    /// Normalizes raw file bytes to UTF-8 input for <see cref="Utf8JsonReader"/>.
+    /// Handles UTF-8 BOM and UTF-16 BOM inputs.
+    /// </summary>
+    /// <param name="bytes">Raw file bytes.</param>
+    /// <param name="transcodedBytes">Optional transcoded UTF-8 bytes when source was UTF-16.</param>
+    /// <returns>UTF-8 JSON span suitable for reader construction.</returns>
+    private static ReadOnlySpan<byte> GetNormalizedUtf8Bytes(byte[] bytes, out byte[]? transcodedBytes)
+    {
+        transcodedBytes = null;
+
+        if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+            return bytes.AsSpan(3);
+
+        if (bytes.Length >= 2)
+        {
+            if (bytes[0] == 0xFF && bytes[1] == 0xFE)
+            {
+                var json = Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
+                transcodedBytes = Encoding.UTF8.GetBytes(json);
+                return transcodedBytes;
+            }
+
+            if (bytes[0] == 0xFE && bytes[1] == 0xFF)
+            {
+                var json = Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+                transcodedBytes = Encoding.UTF8.GetBytes(json);
+                return transcodedBytes;
+            }
+        }
+
+        return bytes;
+    }
 }

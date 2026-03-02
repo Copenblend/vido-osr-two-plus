@@ -237,6 +237,23 @@ public class FunscriptParserTests
         Assert.Equal(19990, result.Actions[^1].AtMs);
     }
 
+    [Fact]
+    public void Parse_LargeActionsArray_PreSizesListCapacity()
+    {
+        var parts = new List<string>(512);
+        for (int i = 0; i < 512; i++)
+        {
+            parts.Add($"{{ \"at\": {i}, \"pos\": 50 }}");
+        }
+
+        var json = "{\"actions\":[" + string.Join(',', parts) + "]}";
+
+        var result = _sut.Parse(json);
+
+        Assert.Equal(512, result.Actions.Count);
+        Assert.True(result.Actions.Capacity >= result.Actions.Count);
+    }
+
     // --- ParseFile ---
 
     [Fact]
@@ -259,6 +276,69 @@ public class FunscriptParserTests
             Assert.Equal("R0", result.AxisId);
             Assert.Equal(tempFile, result.FilePath);
             Assert.Equal(2, result.Actions.Count);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ParseFile_Utf8Bom_ParsesActions()
+    {
+        var tempFile = System.IO.Path.GetTempFileName();
+        try
+        {
+            var json = """
+            {
+                "actions": [
+                    { "at": 100, "pos": 10 },
+                    { "at": 200, "pos": 20 }
+                ]
+            }
+            """;
+
+            var utf8BomBytes = new byte[] { 0xEF, 0xBB, 0xBF }
+                .Concat(System.Text.Encoding.UTF8.GetBytes(json))
+                .ToArray();
+            File.WriteAllBytes(tempFile, utf8BomBytes);
+
+            var result = _sut.ParseFile(tempFile);
+
+            Assert.Equal(2, result.Actions.Count);
+            Assert.Equal(100, result.Actions[0].AtMs);
+            Assert.Equal(200, result.Actions[1].AtMs);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void ParseFile_Utf16LeBom_ParsesActions()
+    {
+        var tempFile = System.IO.Path.GetTempFileName();
+        try
+        {
+            var json = """
+            {
+                "actions": [
+                    { "at": 300, "pos": 30 },
+                    { "at": 400, "pos": 40 }
+                ]
+            }
+            """;
+
+            var utf16Le = System.Text.Encoding.Unicode.GetBytes(json);
+            var bytes = new byte[] { 0xFF, 0xFE }.Concat(utf16Le).ToArray();
+            File.WriteAllBytes(tempFile, bytes);
+
+            var result = _sut.ParseFile(tempFile);
+
+            Assert.Equal(2, result.Actions.Count);
+            Assert.Equal(300, result.Actions[0].AtMs);
+            Assert.Equal(400, result.Actions[1].AtMs);
         }
         finally
         {
@@ -550,6 +630,36 @@ public class FunscriptParserTests
             Assert.Equal(100, result["R0"].Actions[0].AtMs);
             Assert.Equal(200, result["R0"].Actions[1].AtMs);
             Assert.Equal(300, result["R0"].Actions[2].AtMs);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public void TryParseMultiAxis_PreSizesAxisActionListCapacity()
+    {
+        var tempFile = System.IO.Path.GetTempFileName();
+        try
+        {
+            var parts = new List<string>(300);
+            for (int i = 0; i < 300; i++)
+            {
+                parts.Add($"{{ \"at\": {i * 5}, \"pos\": 60 }}");
+            }
+
+            File.WriteAllText(tempFile,
+                "{\"actions\":[{\"at\":0,\"pos\":50}],\"axes\":[{\"id\":\"R0\",\"actions\":["
+                + string.Join(',', parts)
+                + "]}]}");
+
+            var result = _sut.TryParseMultiAxis(tempFile);
+
+            Assert.NotNull(result);
+            Assert.True(result!.ContainsKey("R0"));
+            Assert.Equal(300, result["R0"].Actions.Count);
+            Assert.True(result["R0"].Actions.Capacity >= result["R0"].Actions.Count);
         }
         finally
         {
