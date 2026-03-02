@@ -141,10 +141,36 @@ public class UdpTransportServiceTests : IDisposable
     }
 
     [Fact]
+    public void SendSpan_WhenConnected_SendsDatagram()
+    {
+        using var listener = new UdpClient(0);
+        var listenerPort = ((IPEndPoint)listener.Client.LocalEndPoint!).Port;
+
+        _sut.Connect(listenerPort);
+        listener.Client.ReceiveTimeout = 2000;
+
+        var payload = "L0500\n"u8.ToArray();
+        _sut.Send(payload);
+
+        var remoteEp = new IPEndPoint(IPAddress.Any, 0);
+        var received = listener.Receive(ref remoteEp);
+        var text = Encoding.UTF8.GetString(received);
+
+        Assert.Equal("L0500\n", text);
+    }
+
+    [Fact]
     public void Send_WhenNotConnected_DoesNotThrow()
     {
         // Should silently do nothing
         var ex = Record.Exception(() => _sut.Send("L0500\n"));
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void SendSpan_WhenNotConnected_DoesNotThrow()
+    {
+        var ex = Record.Exception(() => _sut.Send("L0500\n"u8.ToArray()));
         Assert.Null(ex);
     }
 

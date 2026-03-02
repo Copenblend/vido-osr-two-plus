@@ -1,4 +1,5 @@
 using System.IO.Ports;
+using System.Text;
 
 namespace Osr2PlusPlugin.Services;
 
@@ -75,6 +76,14 @@ public class SerialTransportService : ITransportService
     /// <inheritdoc/>
     public void Send(string data)
     {
+        Span<byte> buffer = stackalloc byte[Encoding.UTF8.GetMaxByteCount(data.Length)];
+        var written = Encoding.UTF8.GetBytes(data.AsSpan(), buffer);
+        Send(buffer[..written]);
+    }
+
+    /// <inheritdoc/>
+    public void Send(ReadOnlySpan<byte> data)
+    {
         SerialPort? port;
 
         lock (_lock)
@@ -86,7 +95,7 @@ public class SerialTransportService : ITransportService
         {
             try
             {
-                port.Write(data);
+                port.BaseStream.Write(data);
             }
             catch (Exception ex)
             {
