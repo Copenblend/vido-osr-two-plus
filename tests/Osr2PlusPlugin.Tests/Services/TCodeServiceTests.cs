@@ -85,6 +85,17 @@ public class TCodeServiceTests : IDisposable
         Assert.Equal(499, TCodeService.PositionToTCode(config, 50));
     }
 
+    [Theory]
+    [InlineData("L0", 0)]
+    [InlineData("R0", 1)]
+    [InlineData("R1", 2)]
+    [InlineData("R2", 3)]
+    [InlineData("X9", -1)]
+    public void AxisOrdinal_ReturnsExpectedValue(string axisId, int expected)
+    {
+        Assert.Equal(expected, TCodeService.AxisOrdinal(axisId));
+    }
+
     // ===== Dirty Value Tracking =====
 
     [Fact]
@@ -1459,6 +1470,44 @@ public class TCodeServiceTests : IDisposable
         // Should have received L0 output from both phases
         Assert.True(_transport.SentMessages.Count > 0);
         Assert.True(_transport.SentMessages.Any(m => m.Contains("L0")));
+    }
+
+    [Fact]
+    public void ExternalPositions_UnknownAxisId_IsIgnoredAndProducesNoOutput()
+    {
+        _sut.SetAxisConfigs(AxisConfig.CreateDefaults());
+        _sut.SetExternalPositions(new[] { new AxisPosition { AxisId = "X9", Position = 42.0 } });
+        _sut.SetPlaying(true);
+
+        _sut.Start();
+        Thread.Sleep(100);
+        _sut.StopTimer();
+
+        Assert.Empty(_transport.SentMessages);
+    }
+
+    [Fact]
+    public void ExternalPositions_PartialUpdate_ReplacesPreviouslySetAxes()
+    {
+        _sut.SetAxisConfigs(AxisConfig.CreateDefaults());
+        _sut.SetPlaying(true);
+
+        _sut.SetExternalPositions(new[] { new AxisPosition { AxisId = "L0", Position = 10.0 } });
+        _sut.Start();
+        Thread.Sleep(80);
+        _sut.StopTimer();
+
+        Assert.True(_transport.SentMessages.Any(m => m.Contains("L0")));
+
+        _transport.SentMessages.Clear();
+
+        _sut.SetExternalPositions(new[] { new AxisPosition { AxisId = "R0", Position = 90.0 } });
+        _sut.Start();
+        Thread.Sleep(80);
+        _sut.StopTimer();
+
+        Assert.True(_transport.SentMessages.Any(m => m.Contains("R0")), "Expected R0 output after partial update");
+        Assert.False(_transport.SentMessages.Any(m => m.Contains("L0")), "L0 should not persist after partial external update");
     }
 
     // ===== vido-004: Pulse → Funscript Switching =====
