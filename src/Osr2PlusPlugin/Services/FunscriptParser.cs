@@ -1,4 +1,5 @@
 using System.IO;
+using System.Text;
 using System.Text.Json;
 using Osr2PlusPlugin.Models;
 
@@ -27,21 +28,11 @@ public class FunscriptParser
     /// <param name="axisId">The axis this script represents (default "L0").</param>
     public FunscriptData Parse(string json, string axisId = "L0")
     {
-        var data = new FunscriptData { AxisId = axisId };
+        if (string.IsNullOrEmpty(json))
+            return new FunscriptData { AxisId = axisId };
 
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            ParseActions(root, data);
-        }
-        catch (JsonException)
-        {
-            // Malformed JSON — return empty data
-        }
-
-        return data;
+        var bytes = Encoding.UTF8.GetBytes(json);
+        return ParseFromBytes(bytes.AsSpan(), axisId);
     }
 
     /// <summary>
@@ -52,8 +43,8 @@ public class FunscriptParser
     /// <param name="axisId">The axis this script represents (default "L0").</param>
     public FunscriptData ParseFile(string filePath, string axisId = "L0")
     {
-        var json = File.ReadAllText(filePath);
-        var data = Parse(json, axisId);
+        var bytes = File.ReadAllBytes(filePath);
+        var data = ParseFromBytes(bytes.AsSpan(), axisId);
         data.FilePath = filePath;
         return data;
     }
@@ -69,54 +60,65 @@ public class FunscriptParser
     {
         try
         {
-            var json = File.ReadAllText(filePath);
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
+            var bytes = File.ReadAllBytes(filePath);
+            var reader = new Utf8JsonReader(bytes.AsSpan(), CreateReaderOptions());
 
-            if (!root.TryGetProperty("axes", out var axesElement) ||
-                axesElement.ValueKind != JsonValueKind.Array)
-            {
-                return null;
-            }
-
+            bool hasAxesArray = false;
             var result = new Dictionary<string, FunscriptData>(StringComparer.OrdinalIgnoreCase);
 
-            // Top-level "actions" → L0 (main stroke axis)
-            if (root.TryGetProperty("actions", out var topActions) &&
-                topActions.ValueKind == JsonValueKind.Array)
+            if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+                return null;
+
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
             {
-                var l0 = new FunscriptData { AxisId = "L0", FilePath = filePath };
-                ParseActionsFromElement(topActions, l0);
-
-                if (l0.Actions.Count > 0)
-                    result["L0"] = l0;
-            }
-
-            // Each element in "axes" array: { "id": "R0", "actions": [...] }
-            foreach (var axisObj in axesElement.EnumerateArray())
-            {
-                if (!axisObj.TryGetProperty("id", out var idElement))
+                if (reader.TokenType != JsonTokenType.PropertyName)
                     continue;
 
-                var id = idElement.GetString();
-                if (string.IsNullOrEmpty(id))
-                    continue;
-
-                // Filter to supported axes only
-                if (!SupportedAxes.Contains(id))
-                    continue;
-
-                var data = new FunscriptData { AxisId = id, FilePath = filePath };
-
-                if (axisObj.TryGetProperty("actions", out var actionsElement) &&
-                    actionsElement.ValueKind == JsonValueKind.Array)
+                if (reader.ValueTextEquals("actions"u8))
                 {
-                    ParseActionsFromElement(actionsElement, data);
+                    if (!reader.Read())
+                        break;
+
+                    if (reader.TokenType != JsonTokenType.StartArray)
+                    {
+                        SkipCurrentValue(ref reader);
+                        continue;
+                    }
+
+                    var l0 = new FunscriptData { AxisId = "L0", FilePath = filePath };
+                    ParseActionsFromReader(ref reader, l0.Actions);
+                    SortActionsIfNeeded(l0.Actions);
+
+                    if (l0.Actions.Count > 0)
+                        result["L0"] = l0;
+
+                    continue;
                 }
 
-                if (data.Actions.Count > 0)
-                    result[id] = data;
+                if (reader.ValueTextEquals("axes"u8))
+                {
+                    if (!reader.Read())
+                        break;
+
+                    if (reader.TokenType != JsonTokenType.StartArray)
+                    {
+                        SkipCurrentValue(ref reader);
+                        continue;
+                    }
+
+                    hasAxesArray = true;
+                    ParseAxesArray(ref reader, filePath, result);
+                    continue;
+                }
+
+                if (!reader.Read())
+                    break;
+
+                SkipCurrentValue(ref reader);
             }
+
+            if (!hasAxesArray)
+                return null;
 
             return result.Count > 0 ? result : null;
         }
@@ -127,34 +129,242 @@ public class FunscriptParser
     }
 
     /// <summary>
-    /// Reads the "actions" property from a JSON element into the given FunscriptData,
-    /// clamping pos to 0-100 and sorting by AtMs ascending.
+    /// Parse funscript UTF-8 JSON bytes into a FunscriptData object.
     /// </summary>
-    private static void ParseActions(JsonElement root, FunscriptData data)
+    /// <param name="utf8Json">UTF-8 encoded funscript JSON bytes.</param>
+    /// <param name="axisId">The axis this script represents.</param>
+    private static FunscriptData ParseFromBytes(ReadOnlySpan<byte> utf8Json, string axisId)
     {
-        if (root.TryGetProperty("actions", out var actionsElement) &&
-            actionsElement.ValueKind == JsonValueKind.Array)
+        var data = new FunscriptData { AxisId = axisId };
+
+        try
         {
-            ParseActionsFromElement(actionsElement, data);
+            var reader = new Utf8JsonReader(utf8Json, CreateReaderOptions());
+
+            if (!reader.Read() || reader.TokenType != JsonTokenType.StartObject)
+                return data;
+
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+            {
+                if (reader.TokenType != JsonTokenType.PropertyName)
+                    continue;
+
+                if (!reader.ValueTextEquals("actions"u8))
+                {
+                    if (!reader.Read())
+                        break;
+
+                    SkipCurrentValue(ref reader);
+                    continue;
+                }
+
+                if (!reader.Read())
+                    break;
+
+                if (reader.TokenType != JsonTokenType.StartArray)
+                {
+                    SkipCurrentValue(ref reader);
+                    continue;
+                }
+
+                ParseActionsFromReader(ref reader, data.Actions);
+                break;
+            }
+
+            SortActionsIfNeeded(data.Actions);
+        }
+        catch (JsonException)
+        {
+            // Malformed JSON — return empty data
+        }
+
+        return data;
+    }
+
+    /// <summary>
+    /// Parse an axes array from a multi-axis funscript payload.
+    /// </summary>
+    /// <param name="reader">Utf8JsonReader positioned at StartArray for "axes".</param>
+    /// <param name="filePath">Source file path.</param>
+    /// <param name="result">Target dictionary.</param>
+    private static void ParseAxesArray(
+        ref Utf8JsonReader reader,
+        string filePath,
+        Dictionary<string, FunscriptData> result)
+    {
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+        {
+            if (reader.TokenType != JsonTokenType.StartObject)
+            {
+                SkipCurrentValue(ref reader);
+                continue;
+            }
+
+            string? axisId = null;
+            var axisActions = new List<FunscriptAction>();
+
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+            {
+                if (reader.TokenType != JsonTokenType.PropertyName)
+                    continue;
+
+                if (reader.ValueTextEquals("id"u8))
+                {
+                    if (!reader.Read())
+                        break;
+
+                    if (reader.TokenType == JsonTokenType.String)
+                        axisId = reader.GetString();
+                    else
+                        SkipCurrentValue(ref reader);
+
+                    continue;
+                }
+
+                if (reader.ValueTextEquals("actions"u8))
+                {
+                    if (!reader.Read())
+                        break;
+
+                    if (reader.TokenType == JsonTokenType.StartArray)
+                        ParseActionsFromReader(ref reader, axisActions);
+                    else
+                        SkipCurrentValue(ref reader);
+
+                    continue;
+                }
+
+                if (!reader.Read())
+                    break;
+
+                SkipCurrentValue(ref reader);
+            }
+
+            if (string.IsNullOrEmpty(axisId) || !SupportedAxes.Contains(axisId) || axisActions.Count == 0)
+                continue;
+
+            SortActionsIfNeeded(axisActions);
+            result[axisId] = new FunscriptData
+            {
+                AxisId = axisId,
+                FilePath = filePath,
+                Actions = axisActions,
+            };
         }
     }
 
     /// <summary>
-    /// Reads actions from a JSON array element, clamping pos and sorting.
+    /// Parse actions from a JSON array reader and append valid entries.
     /// </summary>
-    private static void ParseActionsFromElement(JsonElement actionsArray, FunscriptData data)
+    /// <param name="reader">Utf8JsonReader positioned at StartArray.</param>
+    /// <param name="actions">Target action list.</param>
+    private static void ParseActionsFromReader(ref Utf8JsonReader reader, List<FunscriptAction> actions)
     {
-        foreach (var action in actionsArray.EnumerateArray())
+        while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
         {
-            if (action.TryGetProperty("at", out var atProp) &&
-                action.TryGetProperty("pos", out var posProp))
+            if (reader.TokenType != JsonTokenType.StartObject)
             {
-                var at = atProp.GetInt64();
-                var pos = Math.Clamp(posProp.GetInt32(), 0, 100);
-                data.Actions.Add(new FunscriptAction(at, pos));
+                SkipCurrentValue(ref reader);
+                continue;
+            }
+
+            long at = 0;
+            int pos = 0;
+            bool hasAt = false;
+            bool hasPos = false;
+
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndObject)
+            {
+                if (reader.TokenType != JsonTokenType.PropertyName)
+                    continue;
+
+                if (reader.ValueTextEquals("at"u8))
+                {
+                    if (!reader.Read())
+                        break;
+
+                    if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt64(out var atMs))
+                    {
+                        at = atMs;
+                        hasAt = true;
+                    }
+                    else
+                    {
+                        SkipCurrentValue(ref reader);
+                    }
+
+                    continue;
+                }
+
+                if (reader.ValueTextEquals("pos"u8))
+                {
+                    if (!reader.Read())
+                        break;
+
+                    if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var position))
+                    {
+                        pos = Math.Clamp(position, 0, 100);
+                        hasPos = true;
+                    }
+                    else
+                    {
+                        SkipCurrentValue(ref reader);
+                    }
+
+                    continue;
+                }
+
+                if (!reader.Read())
+                    break;
+
+                SkipCurrentValue(ref reader);
+            }
+
+            if (hasAt && hasPos)
+                actions.Add(new FunscriptAction(at, pos));
+        }
+    }
+
+    /// <summary>
+    /// Sort actions only when input is not already ascending by timestamp.
+    /// </summary>
+    /// <param name="actions">Action list to inspect and conditionally sort.</param>
+    private static void SortActionsIfNeeded(List<FunscriptAction> actions)
+    {
+        if (actions.Count <= 1)
+            return;
+
+        bool isSorted = true;
+        for (int i = 1; i < actions.Count; i++)
+        {
+            if (actions[i].AtMs < actions[i - 1].AtMs)
+            {
+                isSorted = false;
+                break;
             }
         }
 
-        data.Actions.Sort((a, b) => a.AtMs.CompareTo(b.AtMs));
+        if (!isSorted)
+            actions.Sort((a, b) => a.AtMs.CompareTo(b.AtMs));
     }
+
+    /// <summary>
+    /// Advance a reader past the current value (object/array/scalar).
+    /// </summary>
+    /// <param name="reader">Reader positioned at a value token.</param>
+    private static void SkipCurrentValue(ref Utf8JsonReader reader)
+    {
+        if (reader.TokenType is JsonTokenType.StartObject or JsonTokenType.StartArray)
+            reader.Skip();
+    }
+
+    /// <summary>
+    /// Reader options used for funscript parsing.
+    /// </summary>
+    private static JsonReaderOptions CreateReaderOptions()
+        => new()
+        {
+            CommentHandling = JsonCommentHandling.Skip,
+            AllowTrailingCommas = true,
+        };
 }
